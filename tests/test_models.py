@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import asyncio
-import llm_provider
+import modules.llm_provider as llm_provider
 
 async def test_openai_models():
     """Test fetching available OpenAI models"""
