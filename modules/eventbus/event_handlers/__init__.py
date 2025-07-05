@@ -5,15 +5,17 @@ from .agent_handlers import (
     agent_think,
     agent_chain,
     agent_decide,
-    agent_reply,
-    AgentDecideResponse
+    # Pydantic models
+    AgentThinkOutput,
+    AgentChainOutput,
+    ChainEventSpec,
+    AgentDecideOutput
 )
 
 from .thread_handlers import (
     thread_match,
     thread_summarize,
     thread_create,
-    thread_created,
     thread_archived
 )
 
@@ -40,13 +42,11 @@ __all__ = [
     'agent_think',
     'agent_chain',
     'agent_decide',
-    'agent_reply',
     
     # Thread handlers
     'thread_match',
     'thread_summarize',
     'thread_create',
-    'thread_created',
     'thread_archived',
     
     # Memory handlers
@@ -62,8 +62,11 @@ __all__ = [
     # System handlers
     'user_input',
     'user_notify',
-    'web_search'
-
-    # Models
-    'AgentDecideResponse'
+    'web_search',
+    
+    # Pydantic models
+    'AgentThinkOutput',
+    'AgentChainOutput',
+    'ChainEventSpec',
+    'AgentDecideOutput'
 ]

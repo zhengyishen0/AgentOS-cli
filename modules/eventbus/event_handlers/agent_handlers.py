@@ -1,50 +1,169 @@
 """Agent-related event handlers for AgentOS."""
 
-from typing import Dict, Any, Literal, Optional
+from typing import Dict, Any, Literal, Optional, List, Union
 from pydantic import BaseModel, Field
-from ..event_registry import register_event_schema
+from ..event_registry import register_event_schema, subscribes_to_event
 from ..event_bus import Event
-from modules.agents.agent_config import load_agent_config
 from modules.agents.llm_provider import complete
-from modules.eventbus.thread_manager import get_thread
+# from modules.eventbus.thread_manager import get_thread  # TODO: Fix import
 
 
-class AgentDecideResponse(BaseModel):
+class ChainEventSpec(BaseModel):
+    """Specification for a single event in a chain."""
+    event: str = Field(description="Event name to trigger")
+    params: Dict[str, Any] = Field(default_factory=dict, description="Event parameters")
+    decide: Optional[str] = Field(default=None, description="Optional condition for event execution")
+
+class AgentChainOutput(BaseModel):
+    """Output from agent.chain event."""
+    chain: List[Union[ChainEventSpec, List[ChainEventSpec]]] = Field(
+        description="List of events to execute (nested lists indicate parallel execution)"
+    )
+
+class AgentThinkOutput(BaseModel):
+    """Output from agent.think event."""
+    event: Literal["agent.reply", "agent.chain"] = Field(description="Next event to trigger")
+    params: Dict[str, Any] = Field(description="Parameters for the next event")
+
+class AgentDecideOutput(BaseModel):
     """Output from agent.decide event."""
     action: Literal["continue", "skip"] = Field(description="Whether to continue or skip the event")
     params: Dict[str, Any] = Field(description="The updated/completed parameters")
     reason: Optional[str] = Field(default=None, description="Reason for skipping (if action is skip)")
 
 
-@register_event_schema("agent.think")
-async def agent_think(event: Event) -> Dict[str, Any]:
-    """Strategic planning and complex reasoning - uses Heavy model"""
-    thread_id = event.data.get('thread_id')
-    prompt = event.data.get('prompt', 'Analyzing request...')
-
-    thread = await get_thread(thread_id)
-    
-    # Mock: Return a simple reply for now
-    return {
-        "event": "agent.reply",
-        "params": {"message": f"Thought about: {prompt}"}
-    }
-
-
+@subscribes_to_event("agent.chain")
 @register_event_schema("agent.chain")
 async def agent_chain(event: Event) -> Dict[str, Any]:
-    """Convert natural language plans to executable event chains - uses Fast model"""
-    plan = event.data.get('plan', '')
+    """Convert natural language plans to executable event chains - uses Fast model.
     
-    # Mock: Return a simple chain
-    return {
-        "chain": [
-            {"event": "tools.now", "params": {}},
-            {"event": "agent.reply", "params": {"message": "Chain executed"}}
-        ]
-    }
+    This handler mechanically translates pseudocode plans into executable event chains.
+    It has full knowledge of available events and their schemas but performs no
+    complex reasoning - just pattern matching and translation.
+    
+    Args:
+        event: Event containing:
+            - plan: The pseudocode plan to convert into an event chain
+        
+    Returns:
+        AgentChainOutput as dict with chain of events to execute
+    """
+
+    system_prompt = """
+You are a mechanical translation AI that converts plans into event chains. You have full knowledge of available events and their schemas.
+
+Your task is to:
+1. Parse the pseudocode plan
+2. Map each step to appropriate events
+3. Use parameter interpolation for data flow ({event.result} syntax)
+4. Group parallel operations in arrays
+5. Always append agent.think at the end
+
+IMPORTANT RULES:
+- No reasoning or interpretation - just mechanical translation
+- Use exact event names and parameter structures
+- Preserve the plan's intent without optimization
+- Support these interpolation patterns:
+  - {event_name.result} - full result
+  - {event_name.result.field} - specific field
+  - {event_name.result[0]} - array access
+
+Example translation:
+Plan: "1. Get current date\n2. Add 7 days\n3. Format as ISO string"
+Chain: [
+  {"event": "tools.now", "params": {}},
+  {"event": "tools.date_calc", "params": {"from": "{tools.now.result}", "add": "7 days"}},
+  {"event": "tools.format", "params": {"date": "{tools.date_calc.result}", "format": "ISO"}},
+  {"event": "agent.think", "params": {"thread_id": "current"}}
+]
+
+For parallel operations:
+Plan: "Get both marketing and engineering team members"  
+Chain: [
+  [
+    {"event": "team.members", "params": {"team": "marketing"}},
+    {"event": "team.members", "params": {"team": "engineering"}}
+  ],
+  {"event": "agent.think", "params": {"thread_id": "current"}}
+]
+"""
+
+    plan = event.data.get('plan', '')
+
+    response = await complete(
+        provider="openai",
+        model="gpt-4.1-nano",
+        messages=[{"role": "user", "content": f"PLAN: {plan}"}],
+        system=system_prompt,
+        response_format=AgentChainOutput
+    )
+    
+    return response
 
 
+@subscribes_to_event("agent.think")
+@register_event_schema("agent.think")
+async def agent_think(event: Event) -> Dict[str, Any]:
+    """Strategic planning and complex reasoning - uses Heavy model.
+    
+    This handler performs high-level reasoning and planning, deciding whether to:
+    1. Reply directly to the user (for simple requests)
+    2. Create a detailed plan for complex multi-step operations
+    
+    Args:
+        event: Event containing:
+            - thread_id: The thread context identifier
+            - prompt: Specific prompt for mid-chain reasoning
+        
+    Returns:
+        AgentThinkOutput as dict with next event and params
+    """
+
+    system_prompt = """
+You are a strategic planning AI agent. Your role is to analyze user requests and decide the best approach.
+
+For SIMPLE requests that can be answered directly:
+- Return: {"event": "agent.reply", "params": {"message": "your direct answer"}}
+
+For COMPLEX requests requiring multiple steps:
+- Return: {"event": "agent.chain", "params": {"plan": "detailed pseudocode plan"}}
+
+The plan should be clear, step-by-step pseudocode that can be mechanically translated into events.
+
+Examples of complex requests:
+- Tasks involving multiple data sources
+- Multi-step calculations or transformations  
+- Operations requiring coordination between teams/systems
+- Time-based scheduling or planning
+
+Keep plans focused and efficient. Use parallel execution where possible.
+"""
+
+    thread_id = event.data.get('thread_id')
+    prompt = event.data.get('prompt', '')
+    
+    # Get thread context for full conversation history
+    # thread = await get_thread(thread_id)  # TODO: Fix import
+    thread = f"Thread {thread_id}"  # Temporary placeholder
+
+    message_content =f"""
+    THREAD: {thread}
+    PROMPT: {prompt}
+    """
+    
+    response = await complete(
+        provider="openai",
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": message_content}],
+        system=system_prompt,
+        response_format=AgentThinkOutput
+    )
+    
+    return response
+
+
+
+@subscribes_to_event("agent.decide")
 @register_event_schema("agent.decide")
 async def agent_decide(event: Event) -> Dict[str, Any]:
     """Parameter completion and simple decisions - uses Ultra-light model.
@@ -111,10 +230,10 @@ TASK: {prompt}
 
     response = await complete(
         provider="openai",
-        model="gpt-4o-mini",
+        model="gpt-4.1-nano",
         messages=[{"role": "user", "content": message_content}],
         system=system_prompt,
-        response_format=AgentDecideResponse
+        response_format=AgentDecideOutput
     )
     
     return response
