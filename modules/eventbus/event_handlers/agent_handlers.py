@@ -7,7 +7,7 @@ from ..event_schemas import (
 )
 from ..event_bus import Event, eventbus
 from modules.agents.llm_provider import complete
-from modules.eventbus.thread_manager import ThreadManager
+from modules.eventbus.thread_manager import thread_manager
 
 
 @eventbus.register("agent.chain", schema=AgentChainInput)
@@ -120,7 +120,6 @@ Keep plans focused and efficient. Use parallel execution where possible.
 """
     
     # Get thread context for full conversation history
-    thread_manager = ThreadManager()
     thread = await thread_manager.get_thread(input_data.thread_id)
     
     # Format thread context for the LLM

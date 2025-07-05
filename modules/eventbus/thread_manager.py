@@ -306,3 +306,6 @@ class ThreadManager:
         await self._save_thread(thread)
         self._thread_cache[thread_id] = thread
         return True
+    
+
+thread_manager = ThreadManager()

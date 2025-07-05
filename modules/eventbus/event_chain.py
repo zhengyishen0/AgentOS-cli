@@ -10,13 +10,13 @@ This module implements the core event chain execution logic, including:
 import asyncio
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union, Type
 from datetime import datetime, timezone
+from pydantic import BaseModel
 
-from .event_bus import Event, InMemoryEventBus
-from .event_registry import validate_event_data, get_event_schema
+from .event_bus import Event, eventbus
 from .parameter_interpolator import ParameterInterpolator
-from .thread_manager import ThreadManager
+from .thread_manager import thread_manager
 
 
 logger = logging.getLogger(__name__)
@@ -47,8 +47,8 @@ class EventChainResult:
 class EventChainExecutor:
     """Executes event chains with parameter interpolation and result propagation."""
     
-    def __init__(self, event_bus: InMemoryEventBus, thread_manager: Optional[ThreadManager] = None):
-        self.event_bus = event_bus
+    def __init__(self):
+        self.event_bus = eventbus
         self.thread_manager = thread_manager
         self._execution_context: Dict[str, Any] = {}
         self._interpolator: Optional[ParameterInterpolator] = None
@@ -139,11 +139,11 @@ class EventChainExecutor:
         try:
             # Interpolate parameters
             interpolated_params = await self._interpolate_params(chain_event.params)
-            schema = get_event_schema(chain_event.event)
+            event_schema = eventbus.get_schema(chain_event.event)
             
             # Handle conditional logic
             if chain_event.decide:
-                decision = await self._handle_decide(chain_event.decide, interpolated_params, schema)
+                decision = await self._handle_decide(chain_event.decide, interpolated_params, event_schema)
                 if decision['action'] == 'skip':
                     chain_event.result = {'skipped': True, 'reason': decision.get('reason')}
                     return chain_event
@@ -152,12 +152,12 @@ class EventChainExecutor:
             
             # Validate parameters
             try:
-                validate_event_data(chain_event.event, interpolated_params)
+                event_schema(**interpolated_params)
             except Exception as e:
                 # Trigger agent.decide for parameter completion
                 completed_params = await self._complete_params(
                     params=interpolated_params,
-                    schema=schema,
+                    schema=event_schema,
                     validation_error=str(e)
                 )
                 interpolated_params = completed_params
@@ -223,7 +223,7 @@ class EventChainExecutor:
             
         return self._interpolator.interpolate(params)
     
-    async def _handle_decide(self, prompt: str, params: Dict[str, Any], schema: Dict[str, Any]) -> Dict[str, str]:
+    async def _handle_decide(self, prompt: str, params: Dict[str, Any], schema: Type[BaseModel]) -> Dict[str, str]:
         """Handle conditional logic via agent.decide.
 
         Args:
@@ -251,7 +251,7 @@ class EventChainExecutor:
     async def _complete_params(
         self,
         params: Dict[str, Any],
-        schema: Dict[str, Any],
+        schema: Type[BaseModel],
         validation_error: str
     ) -> Dict[str, Any]:
         """Complete missing parameters via agent.decide.
