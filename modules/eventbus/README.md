@@ -5,11 +5,18 @@ This module provides a flexible event-driven architecture for AgentOS, supportin
 ## Quick Start
 
 ```python
-from modules.eventbus import eventbus, TaskScheduleInput
+from modules.eventbus import eventbus, TaskScheduleInput, ConcurrentEventBus
 
-# Publish an event
+# Use global eventbus (no persistence)
 result = await eventbus.publish("task.schedule", {
     "type": "once",
+    "action": ["send_email", "update_calendar"]
+})
+
+# Or create eventbus with persistence
+persistent_bus = ConcurrentEventBus(persistence_file="logs/events.jsonl")
+result = await persistent_bus.publish("task.schedule", {
+    "type": "once", 
     "action": ["send_email", "update_calendar"]
 })
 ```
@@ -17,9 +24,10 @@ result = await eventbus.publish("task.schedule", {
 ## Architecture Overview
 
 The EventBus system consists of:
-- **EventBus**: Core pub/sub system with validation
-- **Event Schemas**: Pydantic models for type safety
-- **Handler Registration**: Two methods for different use cases
+- **ConcurrentEventBus**: Core pub/sub system with concurrent execution and optional persistence
+- **Event Schemas**: Pydantic models for type safety and validation
+- **Handler Registration**: Two methods for different use cases (static & dynamic)
+- **Persistence**: Optional JSONL file storage for event history
 
 ## Event Registration Patterns
 
@@ -148,6 +156,56 @@ except ValidationError as e:
 - `UserInputInput` - Handle user input messages
 - `UserNotifyInput` - Send notifications to users
 - `WebSearchInput` - Perform web searches
+
+## Event Persistence
+
+### Creating EventBus with Persistence
+
+```python
+from modules.eventbus import ConcurrentEventBus
+
+# Create eventbus with JSONL file persistence
+eventbus = ConcurrentEventBus(
+    persistence_file="logs/events.jsonl",
+    max_history_size=1000  # Keep last 1000 events in memory
+)
+
+# Events are automatically saved to file when published
+await eventbus.publish("user.action", {"user_id": "123", "action": "login"})
+```
+
+### Persistence Features
+
+- **JSONL Format**: One JSON event per line for efficient appending
+- **Automatic Loading**: Events loaded from file on startup
+- **Concurrent Safe**: File operations run in thread pool to avoid blocking
+- **Memory Management**: Configurable in-memory event history size
+- **Statistics**: Get file size, event counts, and persistence status
+
+### Persistence Statistics
+
+```python
+# Get detailed persistence information
+stats = eventbus.get_persistence_stats()
+print(f"File: {stats['file_path']}")
+print(f"Total events: {stats['total_events_persisted']}")
+print(f"File size: {stats['file_size_bytes']} bytes")
+print(f"In memory: {stats['events_in_memory']}")
+```
+
+### Loading from Existing Files
+
+```python
+# Create new eventbus that loads existing events
+eventbus = ConcurrentEventBus(persistence_file="logs/existing_events.jsonl")
+
+# Check what was loaded
+history = eventbus.get_event_history()
+print(f"Loaded {len(history)} events from file")
+
+# Continue publishing (new events append to file)
+await eventbus.publish("system.startup", {"timestamp": "2024-01-01T10:00:00Z"})
+```
 
 ## EventBus Utilities
 

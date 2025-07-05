@@ -6,11 +6,11 @@ import asyncio
 import logging
 from typing import Dict, Any
 
-from modules.eventbus.event_bus import InMemoryEventBus
+from modules.eventbus import eventbus
 from modules.eventbus.event_chain import EventChainExecutor
-from modules.eventbus.thread_manager import ThreadManager
+from modules.eventbus.thread_manager import thread_manager
 
-# Import all event handlers
+# Import all event handlers to trigger registration
 from modules.eventbus.event_handlers import (
     agent_handlers,
     thread_handlers,
@@ -31,9 +31,9 @@ class AgentOSRuntime:
     """Main AgentOS runtime with event bus and chain executor."""
     
     def __init__(self):
-        self.event_bus = InMemoryEventBus()
-        self.thread_manager = ThreadManager()
-        self.executor = EventChainExecutor(self.event_bus, self.thread_manager)
+        self.event_bus = eventbus
+        self.thread_manager = thread_manager
+        self.executor = EventChainExecutor()
         self._initialized = False
     
     async def initialize(self):
@@ -43,31 +43,10 @@ class AgentOSRuntime:
             
         logger.info("Initializing AgentOS EventChain Runtime...")
         
-        # Register agent handlers (core AI functionality)
-        await self.event_bus.subscribe("agent.think", agent_handlers.agent_think)
-        await self.event_bus.subscribe("agent.chain", agent_handlers.agent_chain)
-        await self.event_bus.subscribe("agent.decide", agent_handlers.agent_decide)
-        
-        # Register thread handlers
-        await self.event_bus.subscribe("thread.match", thread_handlers.thread_match)
-        await self.event_bus.subscribe("thread.summarize", thread_handlers.thread_summarize)
-        await self.event_bus.subscribe("thread.create", thread_handlers.thread_create)
-        await self.event_bus.subscribe("thread.archived", thread_handlers.thread_archived)
-        
-        # Register memory handlers
-        await self.event_bus.subscribe("memory.append", memory_handlers.memory_append)
-        await self.event_bus.subscribe("memory.search", memory_handlers.memory_search)
-        await self.event_bus.subscribe("memory.digest", memory_handlers.memory_digest)
-        
-        # Register task handlers
-        await self.event_bus.subscribe("task.schedule", task_handlers.task_schedule)
-        await self.event_bus.subscribe("task.register", task_handlers.task_register)
-        await self.event_bus.subscribe("task.list", task_handlers.task_list)
-        
-        # Register system handlers
-        await self.event_bus.subscribe("user.input", system_handlers.user_input)
-        await self.event_bus.subscribe("user.notify", system_handlers.user_notify)
-        await self.event_bus.subscribe("web.search", system_handlers.web_search)
+        # Handlers are automatically registered via @eventbus.register decorators
+        # Just need to verify they're loaded
+        registered_events = self.event_bus.list_events()
+        logger.info(f"Registered {len(registered_events)} event handlers: {', '.join(registered_events)}")
         
         self._initialized = True
         logger.info("AgentOS Runtime initialized successfully")

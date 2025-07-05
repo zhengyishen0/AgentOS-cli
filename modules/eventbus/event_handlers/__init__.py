@@ -4,12 +4,7 @@
 from .agent_handlers import (
     agent_think,
     agent_chain,
-    agent_decide,
-    # Pydantic models
-    AgentThinkOutput,
-    AgentChainOutput,
-    ChainEventSpec,
-    AgentDecideOutput
+    agent_decide
 )
 
 from .thread_handlers import (
@@ -64,9 +59,4 @@ __all__ = [
     'user_notify',
     'web_search',
     
-    # Pydantic models
-    'AgentThinkOutput',
-    'AgentChainOutput',
-    'ChainEventSpec',
-    'AgentDecideOutput'
 ]
