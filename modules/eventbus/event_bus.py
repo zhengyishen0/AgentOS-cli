@@ -47,13 +47,17 @@ class InMemoryEventBus():
         self._event_history: list[Event] = []
         self._max_history_size = 1000
 
-    async def publish(self, event_type: str, data: dict[str, Any], source: str = "system") -> None:
-        """Publish an event to all subscribers.
+    async def publish(self, event_type: str, data: dict[str, Any], source: str = "system") -> dict[str, Any]:
+        """Publish an event to all subscribers and return handler results.
 
         Args:
             event_type: Type of event (e.g., "user.created")
             data: Event data payload
             source: Source of the event
+
+        Returns:
+            Dict with handler results. If single handler, returns its result directly.
+            If multiple handlers, returns dict with handler names as keys.
 
         Raises:
             ValueError: If event type is not registered
@@ -88,7 +92,9 @@ class InMemoryEventBus():
         # Get handlers for this event type
         handlers = self._handlers.get(event_type, [])
 
-        # Execute handlers concurrently
+        # Execute handlers concurrently and collect results
+        handler_results = {}
+        
         if handlers:
             tasks = []
             for handler in handlers:
@@ -101,12 +107,26 @@ class InMemoryEventBus():
             # Wait for all handlers to complete
             results = await asyncio.gather(*tasks, return_exceptions=True)
 
-            # Log any exceptions
+            # Process results
             for i, result in enumerate(results):
+                handler_name = handlers[i].__name__
                 if isinstance(result, Exception):
                     logger.error(
-                        f"Handler {handlers[i].__name__} failed for event {event_type}: {result}"
+                        f"Handler {handler_name} failed for event {event_type}: {result}"
                     )
+                    handler_results[handler_name] = {"error": str(result)}
+                else:
+                    handler_results[handler_name] = result
+
+        # Return results based on number of handlers
+        if len(handler_results) == 0:
+            return {}
+        elif len(handler_results) == 1:
+            # Single handler - return its result directly
+            return next(iter(handler_results.values()))
+        else:
+            # Multiple handlers - return dict with handler names as keys
+            return handler_results
 
     async def subscribe(self, event_type: str, handler: Callable) -> None:
         """Subscribe to events of a specific type.
