@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Optional, Union
 from datetime import datetime, timezone
 
 from .event_bus import Event, InMemoryEventBus
-from .event_registry import validate_event_data
+from .event_registry import validate_event_data, get_event_schema
 from .parameter_interpolator import ParameterInterpolator
 from .thread_manager import ThreadManager
 
@@ -138,10 +138,11 @@ class EventChainExecutor:
         try:
             # Interpolate parameters
             interpolated_params = await self._interpolate_params(chain_event.params)
+            schema = get_event_schema(chain_event.event)
             
             # Handle conditional logic
             if chain_event.decide:
-                decision = await self._handle_decide(chain_event.decide, interpolated_params)
+                decision = await self._handle_decide(chain_event.decide, interpolated_params, schema)
                 if decision['action'] == 'skip':
                     chain_event.result = {'skipped': True, 'reason': decision.get('reason')}
                     return chain_event
@@ -154,9 +155,9 @@ class EventChainExecutor:
             except Exception as e:
                 # Trigger agent.decide for parameter completion
                 completed_params = await self._complete_params(
-                    chain_event.event,
-                    interpolated_params,
-                    str(e)
+                    params=interpolated_params,
+                    schema=schema,
+                    validation_error=str(e)
                 )
                 interpolated_params = completed_params
             
@@ -221,20 +222,59 @@ class EventChainExecutor:
             
         return self._interpolator.interpolate(params)
     
-    async def _handle_decide(self, condition: str, params: Dict[str, Any]) -> Dict[str, str]:
-        """Handle conditional logic via agent.decide."""
+    async def _handle_decide(self, prompt: str, params: Dict[str, Any], schema: Dict[str, Any]) -> Dict[str, str]:
+        """Handle conditional logic via agent.decide.
+
+        Args:
+            prompt: The condition to evaluate
+            params: The parameters to pass to the condition
+            schema: The schema of the event being evaluated
+        Returns:
+            decision: 
+                'action': 'continue' or 'skip'
+                'params': the updated params
+                'reason': 'reason for skipping'
+            
+        """
         # Placeholder - will integrate with agent.decide
-        return {'action': 'continue'}
+        decision = await self.event_bus.publish(
+            event_type='agent.decide',
+            data={
+                'prompt': prompt,
+                'params': params,
+                'schema': schema
+            }
+        )   
+        return decision
     
     async def _complete_params(
         self,
-        event_name: str,
-        incomplete_params: Dict[str, Any],
+        params: Dict[str, Any],
+        schema: Dict[str, Any],
         validation_error: str
     ) -> Dict[str, Any]:
-        """Complete missing parameters via agent.decide."""
-        # Placeholder - will integrate with agent.decide
-        return incomplete_params
+        """Complete missing parameters via agent.decide.
+        
+        Args:
+            params: The parameters to complete
+            schema: The schema of the event being completed
+            validation_error: The error message from parameter validation
+        
+        Returns:
+            completed_params: The completed parameters
+        """
+
+        decision = await self.event_bus.publish(
+            event_type='agent.decide',
+            data={
+                'prompt': "Correct the following parameters to match the schema. Current error: " + validation_error,
+                'params': params,
+                'schema': schema
+            }
+        )   
+
+        completed_params = decision['params']
+        return completed_params
     
     async def _publish_and_wait(self, event: Event) -> Any:
         """Publish event and wait for result.

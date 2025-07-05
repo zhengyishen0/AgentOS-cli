@@ -5,6 +5,8 @@ from typing import Optional, Dict, Any, List, Union, Literal
 from pydantic import BaseModel, Field
 from .event_registry import register_event_schema
 from .event_bus import Event
+from modules.agents.agent_config import load_agent_config
+from modules.agents.llm_provider import complete
 
 # Core Agent Events
 
@@ -35,11 +37,28 @@ async def agent_chain(event: Event) -> Dict[str, Any]:
 
 @register_event_schema("agent.decide")
 async def agent_decide(event: Event) -> Dict[str, Any]:
-    """Parameter completion and simple decisions - uses Ultra-light model"""
-    target_event = event.data.get('event', '')
+    """Parameter completion and simple decisions - uses Ultra-light model
+    Params - event:
+        event: The name of the event being evaluated
+        params: The parameters to pass to the condition
+        schema: The schema of the event being evaluated
+    Returns - decision: 
+        action: 'continue' | 'skip'
+        params: the updated params
+        reason: 'reason for skipping'
+    """
+    prompt = event.data.get('prompt', '')
     params = event.data.get('params', {})
-    condition = event.data.get('condition')
+    schema = event.data.get('schema', {})
     
+    agent_config = load_agent_config('decide')
+    response = await complete(
+        provider=agent_config['provider'],
+        model=agent_config['model'],
+        messages=[{"role": "user", "content": prompt}],
+        system=agent_config['system_prompt'],
+        response_format=agent_config['output_type']
+    )
     # Mock: Always continue with provided params
     return {
         "action": "continue",

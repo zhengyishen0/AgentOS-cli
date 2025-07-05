@@ -1,5 +1,5 @@
 # llm_provider.py
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, ResponseFormat
 from typing import List, Dict
 import os
 
@@ -40,7 +40,7 @@ async def get_available_models(provider: str) -> List[str]:
     models = await client.models.list()
     return [model.id for model in models.data]
 
-async def complete(provider: str, model: str, messages: List[Dict], system: str = "", config: Dict = None) -> str:
+async def complete(provider: str, model: str, messages: List[Dict], system: str = "", response_format: ResponseFormat = None, config: Dict = None) -> str:
     """Complete a chat request using the specified provider and model
     
     Args:
@@ -48,6 +48,7 @@ async def complete(provider: str, model: str, messages: List[Dict], system: str 
         model: The model to use
         messages: The messages to send to the model
         system: The system message to send to the model
+        response_format: The output type to use for the response
         config: The configuration to use, including temperature, max_tokens, etc.
 
     Returns:
@@ -63,6 +64,7 @@ async def complete(provider: str, model: str, messages: List[Dict], system: str 
     response = await client.chat.completions.create(
         model=model,
         messages=messages,
+        response_format=response_format,
         **(config or {})
     )
     
