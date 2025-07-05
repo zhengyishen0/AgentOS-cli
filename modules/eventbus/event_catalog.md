@@ -7,7 +7,7 @@ This document lists all planned events in the EventChain architecture.
 ### agent.think
 - **Model**: Heavy (Claude/GPT-4)
 - **Purpose**: Strategic planning and complex reasoning
-- **Params**: 
+- **Data**: 
   - `thread_id`: string (required)
   - `prompt`: string (optional) - for mid-chain reasoning
 - **Returns**: Either:
@@ -17,14 +17,14 @@ This document lists all planned events in the EventChain architecture.
 ### agent.chain
 - **Model**: Fast (Mistral/Llama)
 - **Purpose**: Convert natural language plans to executable event chains
-- **Params**:
+- **Data**:
   - `plan`: string - detailed pseudocode-like plan
 - **Returns**: `{chain: [...]}`
 
 ### agent.decide
 - **Model**: Ultra-light (Phi/TinyLlama)
 - **Purpose**: Parameter completion and simple decisions
-- **Params**:
+- **Data**:
   - `event`: string - event needing completion
   - `params`: object - incomplete parameters
   - `condition`: string (optional) - condition to evaluate
@@ -35,7 +35,7 @@ This document lists all planned events in the EventChain architecture.
 
 ### agent.reply
 - **Purpose**: Send message to user
-- **Params**:
+- **Data**:
   - `message`: string
   - `thread_id`: string
 
@@ -43,7 +43,7 @@ This document lists all planned events in the EventChain architecture.
 
 ### thread.match
 - **Purpose**: Determine which thread a message belongs to
-- **Params**:
+- **Data**:
   - `message`: string
   - `thread_id`: string (optional) - current thread
 - **Returns**:
@@ -53,7 +53,7 @@ This document lists all planned events in the EventChain architecture.
 
 ### thread.summarize
 - **Purpose**: Update thread summary
-- **Params**:
+- **Data**:
   - `thread_id`: string
 - **Auto-called**: After each chain execution
 
@@ -69,14 +69,14 @@ This document lists all planned events in the EventChain architecture.
 
 ### memory.append
 - **Purpose**: Add to daily journal with keywords
-- **Params**:
+- **Data**:
   - `thread_id`: string
   - `content`: string
 - **Side-effects**: Extracts keywords during append
 
 ### memory.search
 - **Purpose**: Search across journals/knowledge
-- **Params**:
+- **Data**:
   - `query`: string
   - `scope`: "recent" | "all"
   - `type`: "journal" | "people" | "project" | "any"
@@ -84,7 +84,7 @@ This document lists all planned events in the EventChain architecture.
 
 ### memory.digest
 - **Purpose**: Process journals into organized knowledge
-- **Params**:
+- **Data**:
   - `period`: "daily" | "weekly"
 - **Extracts**: people, projects, preferences, passwords, etc.
 
@@ -92,7 +92,7 @@ This document lists all planned events in the EventChain architecture.
 
 ### task.schedule
 - **Purpose**: Create all types of tasks
-- **Params**:
+- **Data**:
   - `type`: "once" | "repeat" | "delay"
   - `at`: datetime (for once/repeat)
   - `interval`: string (for repeat)
@@ -102,14 +102,14 @@ This document lists all planned events in the EventChain architecture.
 
 ### task.register
 - **Purpose**: Hook-based task registration
-- **Params**:
+- **Data**:
   - `trigger`: string - "pre:event.name" or "post:event.name"
   - `condition`: string - condition to evaluate
   - `action`: array of events to execute
 
 ### task.list
 - **Purpose**: List tasks
-- **Params**:
+- **Data**:
   - `filter`: object (optional)
   - `status`: "pending" | "active" | "completed" | "archived"
 - **Returns**: `{tasks: [...]}`
@@ -118,12 +118,12 @@ This document lists all planned events in the EventChain architecture.
 
 ### tools.now
 - **Purpose**: Get current date/time
-- **Params**: none
+- **Data**: none
 - **Returns**: `{date: "2024-01-15", time: "10:30:00", datetime: "2024-01-15T10:30:00Z"}`
 
 ### tools.date_calc
 - **Purpose**: Date calculations
-- **Params**:
+- **Data**:
   - `from`: datetime or "{reference}"
   - `add`: string (optional) - "1 week", "3 days", etc.
   - `subtract`: string (optional)
@@ -135,7 +135,7 @@ This document lists all planned events in the EventChain architecture.
 
 ### email.search
 - **Purpose**: Search emails
-- **Params**:
+- **Data**:
   - `from`: string (optional)
   - `to`: string (optional)
   - `subject`: string (optional)
@@ -146,7 +146,7 @@ This document lists all planned events in the EventChain architecture.
 
 ### email.send
 - **Purpose**: Send email
-- **Params**:
+- **Data**:
   - `to`: string or array
   - `subject`: string
   - `body`: string
@@ -160,7 +160,7 @@ This document lists all planned events in the EventChain architecture.
 
 ### calendar.check
 - **Purpose**: Check calendar
-- **Params**:
+- **Data**:
   - `date`: date or "{reference}"
   - `date_range`: object (optional) - {start, end}
   - `query`: string (optional)
@@ -168,7 +168,7 @@ This document lists all planned events in the EventChain architecture.
 
 ### calendar.create
 - **Purpose**: Create calendar event
-- **Params**:
+- **Data**:
   - `type`: "meeting" | "reminder" | "event"
   - `title`: string
   - `attendees`: array (optional)
@@ -178,7 +178,7 @@ This document lists all planned events in the EventChain architecture.
 
 ### calendar.availability
 - **Purpose**: Find available time slots
-- **Params**:
+- **Data**:
   - `people`: array of person IDs
   - `date_range`: object - {start, end}
   - `duration`: string - minimum slot duration
@@ -186,7 +186,7 @@ This document lists all planned events in the EventChain architecture.
 
 ### calendar.search
 - **Purpose**: Search calendar events
-- **Params**:
+- **Data**:
   - `team`: string (optional)
   - `person`: string (optional)
   - `date_range`: object or "{reference}"
@@ -196,13 +196,13 @@ This document lists all planned events in the EventChain architecture.
 
 ### team.members
 - **Purpose**: Get team members
-- **Params**:
+- **Data**:
   - `team`: string - team name
 - **Returns**: `{members: [{id, name, email, role}...]}`
 
 ### people.info
 - **Purpose**: Get person information
-- **Params**:
+- **Data**:
   - `name`: string
 - **Returns**: Person details from knowledge base
 
@@ -210,7 +210,7 @@ This document lists all planned events in the EventChain architecture.
 
 ### document.create
 - **Purpose**: Create document
-- **Params**:
+- **Data**:
   - `type`: "presentation" | "document" | "spreadsheet"
   - `title`: string
   - `content`: string or object
@@ -218,7 +218,7 @@ This document lists all planned events in the EventChain architecture.
 
 ### document.search
 - **Purpose**: Search documents
-- **Params**:
+- **Data**:
   - `query`: string
   - `type`: string (optional)
 - **Returns**: `{documents: [...]}`
@@ -231,13 +231,13 @@ This document lists all planned events in the EventChain architecture.
 
 ### user.notify
 - **Purpose**: Send notification to user
-- **Params**:
+- **Data**:
   - `message`: string
   - `type`: "info" | "warning" | "error" (optional)
 
 ### web.search
 - **Purpose**: Search the web
-- **Params**:
+- **Data**:
   - `query`: string
 - **Returns**: `{results: [...]}`
 

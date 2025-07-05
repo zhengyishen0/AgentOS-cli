@@ -18,6 +18,7 @@ from .event_registry import validate_event_data, get_event_schema
 from .parameter_interpolator import ParameterInterpolator
 from .thread_manager import ThreadManager
 
+
 logger = logging.getLogger(__name__)
 
 
