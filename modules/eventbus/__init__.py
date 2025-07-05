@@ -1,23 +1,31 @@
 """EventBus module for AgentOS EventChain architecture."""
 
-from .event_bus import InMemoryEventBus, Event
-from .event_registry import (
-    register_event_schema,
-    get_event_schema,
-    validate_event_data,
-    list_registered_events,
-    publishes_event,
-    subscribes_to_event,
-)
-# from .event_schemas import *  # Will contain all core event schemas
+from .event_bus import InMemoryEventBus, Event, eventbus
+from .event_schemas import *  # All event schema classes
 
 __all__ = [
     "InMemoryEventBus",
-    "Event",
-    "register_event_schema",
-    "get_event_schema",
-    "validate_event_data",
-    "list_registered_events",
-    "publishes_event",
-    "subscribes_to_event",
+    "Event", 
+    "eventbus",
+    # Schema classes exported from event_schemas
+    "TaskScheduleInput",
+    "TaskRegisterInput", 
+    "TaskListInput",
+    "AgentChainInput",
+    "AgentThinkInput",
+    "AgentDecideInput",
+    "ChainEventSpec",
+    "AgentChainOutput",
+    "AgentThinkOutput", 
+    "AgentDecideOutput",
+    "ThreadMatchInput",
+    "ThreadSummarizeInput",
+    "ThreadCreateInput",
+    "ThreadArchivedInput",
+    "MemoryAppendInput",
+    "MemorySearchInput",
+    "MemoryDigestInput",
+    "UserInputInput",
+    "UserNotifyInput",
+    "WebSearchInput",
 ]

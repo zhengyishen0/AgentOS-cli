@@ -1,11 +1,11 @@
 """Memory operation event handlers for AgentOS."""
 
 from typing import Dict, Any
-from ..event_registry import register_event_schema
-from ..event_bus import Event
+from ..event_schemas import MemoryAppendInput, MemorySearchInput, MemoryDigestInput
+from ..event_bus import Event, eventbus
 
 
-@register_event_schema("memory.append")
+@eventbus.register("memory.append", schema=MemoryAppendInput)
 async def memory_append(event: Event) -> Dict[str, Any]:
     """Add to daily journal with keywords"""
     thread_id = event.data.get('thread_id')
@@ -19,7 +19,7 @@ async def memory_append(event: Event) -> Dict[str, Any]:
     }
 
 
-@register_event_schema("memory.search")
+@eventbus.register("memory.search", schema=MemorySearchInput)
 async def memory_search(event: Event) -> Dict[str, Any]:
     """Search across journals/knowledge"""
     query = event.data.get('query', '')
@@ -34,7 +34,7 @@ async def memory_search(event: Event) -> Dict[str, Any]:
     }
 
 
-@register_event_schema("memory.digest")
+@eventbus.register("memory.digest", schema=MemoryDigestInput)
 async def memory_digest(event: Event) -> Dict[str, Any]:
     """Process journals into organized knowledge"""
     period = event.data.get('period', 'daily')

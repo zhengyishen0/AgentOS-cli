@@ -3,18 +3,12 @@
 from datetime import datetime, timezone
 from typing import Dict, Any
 import uuid
-from pydantic import BaseModel, Field
-from ..event_registry import register_event_schema
-from ..event_bus import Event
+from ..event_schemas import ThreadMatchInput, ThreadSummarizeInput, ThreadCreateInput, ThreadArchivedInput
+from ..event_bus import Event, eventbus
 from ..thread_manager import ThreadManager
 
 
-class ThreadMatchInput(BaseModel):
-    """Input schema for thread.match event."""
-    input: str = Field(description="User input text to match against existing threads")
-
-
-@register_event_schema("thread.match", input_model=ThreadMatchInput)
+@eventbus.register("thread.match", schema=ThreadMatchInput)
 async def thread_match(event: Event) -> Dict[str, Any]:
     """Determine which thread a message belongs to"""
     # Validate input data
@@ -47,7 +41,7 @@ async def thread_match(event: Event) -> Dict[str, Any]:
         }
 
 
-@register_event_schema("thread.summarize")
+@eventbus.register("thread.summarize", schema=ThreadSummarizeInput)
 async def thread_summarize(event: Event) -> Dict[str, Any]:
     """Update thread summary"""
     thread_id = event.data.get('thread_id')
@@ -59,7 +53,7 @@ async def thread_summarize(event: Event) -> Dict[str, Any]:
     }
 
 
-@register_event_schema("thread.create")
+@eventbus.register("thread.create", schema=ThreadCreateInput)
 async def thread_create(event: Event) -> Dict[str, Any]:
     """Create a new thread"""
     thread_id = event.data.get('thread_id')
@@ -77,7 +71,7 @@ async def thread_create(event: Event) -> Dict[str, Any]:
     }
 
 
-@register_event_schema("thread.archived")
+@eventbus.register("thread.archived", schema=ThreadArchivedInput)
 async def thread_archived(event: Event) -> None:
     """Thread archival event"""
     thread_id = event.data.get('thread_id')

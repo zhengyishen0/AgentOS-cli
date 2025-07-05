@@ -2,17 +2,11 @@
 
 from datetime import datetime, timezone
 from typing import Dict, Any
-from pydantic import BaseModel, Field
-from ..event_registry import register_event_schema
-from ..event_bus import Event
+from ..event_schemas import UserInputInput, UserNotifyInput, WebSearchInput
+from ..event_bus import Event, eventbus
 
 
-class UserInputInput(BaseModel):
-    """Input schema for user.input event."""
-    text: str = Field(description="User input text")
-
-
-@register_event_schema("user.input", input_model=UserInputInput)
+@eventbus.register("user.input", schema=UserInputInput)
 async def user_input(event: Event) -> Dict[str, Any]:
     """User input received"""
     # Validate input data
@@ -27,7 +21,7 @@ async def user_input(event: Event) -> Dict[str, Any]:
     }
 
 
-@register_event_schema("user.notify")
+@eventbus.register("user.notify", schema=UserNotifyInput)
 async def user_notify(event: Event) -> None:
     """Send notification to user"""
     message = event.data.get('message', '')
@@ -38,7 +32,7 @@ async def user_notify(event: Event) -> None:
     return None
 
 
-@register_event_schema("web.search")
+@eventbus.register("web.search", schema=WebSearchInput)
 async def web_search(event: Event) -> Dict[str, Any]:
     """Search the web"""
     query = event.data.get('query', '')

@@ -8,10 +8,9 @@ import logging
 from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime
-from typing import Any
-
-from .event_registry import get_event_schema, validate_event_data
+from datetime import datetime, timezone
+from typing import Any, Optional, Type
+from pydantic import BaseModel, ValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +22,7 @@ class Event:
 
     type: str
     data: dict[str, Any]
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     source: str = "system"
 
     def to_dict(self) -> dict[str, Any]:
@@ -44,8 +43,27 @@ class InMemoryEventBus():
 
     def __init__(self):
         self._handlers: dict[str, list[Callable]] = defaultdict(list)
+        self._schemas: dict[str, Type[BaseModel]] = {}
         self._event_history: list[Event] = []
         self._max_history_size = 1000
+    
+    def register(self, event_type: str, schema: Optional[Type[BaseModel]] = None):
+        """Decorator to register event handlers with optional schema validation.
+        
+        Args:
+            event_type: The event type to handle (e.g., "task.schedule")
+            schema: Optional Pydantic schema for input validation
+            
+        Returns:
+            Decorator function
+        """
+        def decorator(handler_func: Callable):
+            self._handlers[event_type].append(handler_func)
+            if schema:
+                self._schemas[event_type] = schema
+            logger.info(f"Registered {handler_func.__name__} for {event_type}")
+            return handler_func
+        return decorator
 
     async def publish(self, event_type: str, data: dict[str, Any], source: str = "system") -> dict[str, Any]:
         """Publish an event to all subscribers and return handler results.
@@ -64,14 +82,14 @@ class InMemoryEventBus():
             ValidationError: If data doesn't match the registered schema
         """
         # Validate event data against registered schema
-        schema = get_event_schema(event_type)
-        if schema:
+        if event_type in self._schemas:
             try:
-                validated_data = validate_event_data(event_type, data)
+                schema = self._schemas[event_type]
+                validated_data = schema(**data)
                 # Convert back to dict for storage/transmission
                 data = validated_data.model_dump()
                 logger.debug(f"Event data validated for {event_type}")
-            except Exception as e:
+            except ValidationError as e:
                 logger.error(f"Event validation failed for {event_type}: {e}")
                 raise
         else:
@@ -182,3 +200,38 @@ class InMemoryEventBus():
     def clear_history(self) -> None:
         """Clear event history."""
         self._event_history.clear()
+    
+    def list_events(self) -> dict[str, list[str]]:
+        """List all events and their handlers.
+        
+        Returns:
+            Dict mapping event types to list of handler names
+        """
+        return {event: [h.__name__ for h in handlers] 
+                for event, handlers in self._handlers.items()}
+    
+    def get_schema(self, event_type: str) -> Optional[Type[BaseModel]]:
+        """Get schema for an event type.
+        
+        Args:
+            event_type: The event type
+            
+        Returns:
+            The Pydantic schema class or None
+        """
+        return self._schemas.get(event_type)
+    
+    def has_handler(self, event_type: str) -> bool:
+        """Check if handlers exist for an event type.
+        
+        Args:
+            event_type: The event type
+            
+        Returns:
+            True if handlers exist
+        """
+        return event_type in self._handlers and len(self._handlers[event_type]) > 0
+
+
+# Global event bus instance
+eventbus = InMemoryEventBus()

@@ -1,56 +1,16 @@
 """Agent-related event handlers for AgentOS."""
 
-from typing import Dict, Any, Literal, Optional, List, Union
-from pydantic import BaseModel, Field
-from ..event_registry import register_event_schema, subscribes_to_event
-from ..event_bus import Event
+from typing import Dict, Any
+from ..event_schemas import (
+    AgentChainInput, AgentThinkInput, AgentDecideInput,
+    AgentChainOutput, AgentThinkOutput, AgentDecideOutput
+)
+from ..event_bus import Event, eventbus
 from modules.agents.llm_provider import complete
 from modules.eventbus.thread_manager import ThreadManager
 
 
-# Input Schema Models
-class AgentChainInput(BaseModel):
-    """Input schema for agent.chain event."""
-    plan: str = Field(description="The pseudocode plan to convert into an event chain")
-
-class AgentThinkInput(BaseModel):
-    """Input schema for agent.think event."""
-    thread_id: str = Field(description="The thread context identifier")
-    prompt: str = Field(default="", description="Specific prompt for mid-chain reasoning")
-
-class AgentDecideInput(BaseModel):
-    """Input schema for agent.decide event."""
-    schema: Dict[str, Any] = Field(description="The schema of the event being evaluated")
-    prompt: str = Field(description="The prompt for the decision")
-    params: Dict[str, Any] = Field(default_factory=dict, description="The parameters to pass to the condition")
-
-# Output Schema Models
-class ChainEventSpec(BaseModel):
-    """Specification for a single event in a chain."""
-    event: str = Field(description="Event name to trigger")
-    params: Dict[str, Any] = Field(default_factory=dict, description="Event parameters")
-    decide: Optional[str] = Field(default=None, description="Optional condition for event execution")
-
-class AgentChainOutput(BaseModel):
-    """Output from agent.chain event."""
-    chain: List[Union[ChainEventSpec, List[ChainEventSpec]]] = Field(
-        description="List of events to execute (nested lists indicate parallel execution)"
-    )
-
-class AgentThinkOutput(BaseModel):
-    """Output from agent.think event."""
-    event: Literal["agent.reply", "agent.chain"] = Field(description="Next event to trigger")
-    params: Dict[str, Any] = Field(description="Parameters for the next event")
-
-class AgentDecideOutput(BaseModel):
-    """Output from agent.decide event."""
-    action: Literal["continue", "skip"] = Field(description="Whether to continue or skip the event")
-    params: Dict[str, Any] = Field(description="The updated/completed parameters")
-    reason: Optional[str] = Field(default=None, description="Reason for skipping (if action is skip)")
-
-
-@subscribes_to_event("agent.chain")
-@register_event_schema("agent.chain", input_model=AgentChainInput)
+@eventbus.register("agent.chain", schema=AgentChainInput)
 async def agent_chain(event: Event) -> Dict[str, Any]:
     """Convert natural language plans to executable event chains - uses Fast model.
     
@@ -119,8 +79,7 @@ Chain: [
     return response
 
 
-@subscribes_to_event("agent.think")
-@register_event_schema("agent.think", input_model=AgentThinkInput)
+@eventbus.register("agent.think", schema=AgentThinkInput)
 async def agent_think(event: Event) -> Dict[str, Any]:
     """Strategic planning and complex reasoning - uses Heavy model.
     
@@ -166,7 +125,7 @@ Keep plans focused and efficient. Use parallel execution where possible.
     
     # Format thread context for the LLM
     if thread:
-        thread_context = f"Thread {thread.id}: {thread.summary}\nEvents: {len(thread.events)}"
+        thread_context = f"Thread {thread.thread_id}: {thread.summary}\nEvents: {len(thread.events)}"
     else:
         thread_context = f"New thread {input_data.thread_id}"
 
@@ -183,9 +142,7 @@ Keep plans focused and efficient. Use parallel execution where possible.
     return response
 
 
-
-@subscribes_to_event("agent.decide")
-@register_event_schema("agent.decide", input_model=AgentDecideInput)
+@eventbus.register("agent.decide", schema=AgentDecideInput)
 async def agent_decide(event: Event) -> Dict[str, Any]:
     """Parameter completion and simple decisions - uses Ultra-light model.
     
@@ -235,9 +192,9 @@ You must respond with a JSON object containing:
 - "reason": Optional explanation for your decision (required if action is "skip")
 
 EXAMPLES:
-- If parameters are complete and conditions are met: {{"action": "continue", "params": {{...}}}}
-- If parameters are missing but can be completed: {{"action": "continue", "params": {{"completed_param": "value", ...}}}}
-- If conditions are not met: {{"action": "skip", "params": {{...}}, "reason": "Condition not met: ..."}}
+- If parameters are complete and conditions are met: {"action": "continue", "params": {...}}
+- If parameters are missing but can be completed: {"action": "continue", "params": {"completed_param": "value", ...}}
+- If conditions are not met: {"action": "skip", "params": {...}, "reason": "Condition not met: ..."}
 
 """
 
