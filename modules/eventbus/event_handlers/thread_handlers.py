@@ -3,21 +3,48 @@
 from datetime import datetime, timezone
 from typing import Dict, Any
 import uuid
+from pydantic import BaseModel, Field
 from ..event_registry import register_event_schema
 from ..event_bus import Event
+from ..thread_manager import ThreadManager
 
 
-@register_event_schema("thread.match")
+class ThreadMatchInput(BaseModel):
+    """Input schema for thread.match event."""
+    input: str = Field(description="User input text to match against existing threads")
+
+
+@register_event_schema("thread.match", input_model=ThreadMatchInput)
 async def thread_match(event: Event) -> Dict[str, Any]:
     """Determine which thread a message belongs to"""
-    message = event.data.get('message', '')
-    thread_id = event.data.get('thread_id')
+    # Validate input data
+    input_data = ThreadMatchInput(**event.data)
     
-    # Mock: Always continue with current thread
-    return {
-        "action": "continue",
-        "thread_id": thread_id or "default_thread"
-    }
+    thread_manager = ThreadManager()
+    
+    # Search for existing threads that match the input
+    threads = await thread_manager.search_threads(input_data.input)
+    
+    if threads:
+        # Found matching thread - return the most relevant one
+        best_match = threads[0]
+        return {
+            "action": "continue",
+            "thread_id": best_match.id,
+            "confidence": 0.8,
+            "summary": best_match.summary
+        }
+    else:
+        # No matching thread found - create a new one
+        new_thread = await thread_manager.create_thread(
+            summary=f"Discussion about: {input_data.input[:50]}..."
+        )
+        return {
+            "action": "new",
+            "thread_id": new_thread.id,
+            "confidence": 1.0,
+            "summary": new_thread.summary
+        }
 
 
 @register_event_schema("thread.summarize")

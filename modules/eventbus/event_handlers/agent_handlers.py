@@ -5,9 +5,26 @@ from pydantic import BaseModel, Field
 from ..event_registry import register_event_schema, subscribes_to_event
 from ..event_bus import Event
 from modules.agents.llm_provider import complete
-# from modules.eventbus.thread_manager import get_thread  # TODO: Fix import
+from modules.eventbus.thread_manager import ThreadManager
 
 
+# Input Schema Models
+class AgentChainInput(BaseModel):
+    """Input schema for agent.chain event."""
+    plan: str = Field(description="The pseudocode plan to convert into an event chain")
+
+class AgentThinkInput(BaseModel):
+    """Input schema for agent.think event."""
+    thread_id: str = Field(description="The thread context identifier")
+    prompt: str = Field(default="", description="Specific prompt for mid-chain reasoning")
+
+class AgentDecideInput(BaseModel):
+    """Input schema for agent.decide event."""
+    schema: Dict[str, Any] = Field(description="The schema of the event being evaluated")
+    prompt: str = Field(description="The prompt for the decision")
+    params: Dict[str, Any] = Field(default_factory=dict, description="The parameters to pass to the condition")
+
+# Output Schema Models
 class ChainEventSpec(BaseModel):
     """Specification for a single event in a chain."""
     event: str = Field(description="Event name to trigger")
@@ -33,7 +50,7 @@ class AgentDecideOutput(BaseModel):
 
 
 @subscribes_to_event("agent.chain")
-@register_event_schema("agent.chain")
+@register_event_schema("agent.chain", input_model=AgentChainInput)
 async def agent_chain(event: Event) -> Dict[str, Any]:
     """Convert natural language plans to executable event chains - uses Fast model.
     
@@ -48,6 +65,9 @@ async def agent_chain(event: Event) -> Dict[str, Any]:
     Returns:
         AgentChainOutput as dict with chain of events to execute
     """
+
+    # Validate input data
+    input_data = AgentChainInput(**event.data)
 
     system_prompt = """
 You are a mechanical translation AI that converts plans into event chains. You have full knowledge of available events and their schemas.
@@ -88,12 +108,10 @@ Chain: [
 ]
 """
 
-    plan = event.data.get('plan', '')
-
     response = await complete(
         provider="openai",
         model="gpt-4.1-nano",
-        messages=[{"role": "user", "content": f"PLAN: {plan}"}],
+        messages=[{"role": "user", "content": f"PLAN: {input_data.plan}"}],
         system=system_prompt,
         response_format=AgentChainOutput
     )
@@ -102,7 +120,7 @@ Chain: [
 
 
 @subscribes_to_event("agent.think")
-@register_event_schema("agent.think")
+@register_event_schema("agent.think", input_model=AgentThinkInput)
 async def agent_think(event: Event) -> Dict[str, Any]:
     """Strategic planning and complex reasoning - uses Heavy model.
     
@@ -118,6 +136,9 @@ async def agent_think(event: Event) -> Dict[str, Any]:
     Returns:
         AgentThinkOutput as dict with next event and params
     """
+
+    # Validate input data
+    input_data = AgentThinkInput(**event.data)
 
     system_prompt = """
 You are a strategic planning AI agent. Your role is to analyze user requests and decide the best approach.
@@ -138,18 +159,18 @@ Examples of complex requests:
 
 Keep plans focused and efficient. Use parallel execution where possible.
 """
-
-    thread_id = event.data.get('thread_id')
-    prompt = event.data.get('prompt', '')
     
     # Get thread context for full conversation history
-    # thread = await get_thread(thread_id)  # TODO: Fix import
-    thread = f"Thread {thread_id}"  # Temporary placeholder
+    thread_manager = ThreadManager()
+    thread = await thread_manager.get_thread(input_data.thread_id)
+    
+    # Format thread context for the LLM
+    if thread:
+        thread_context = f"Thread {thread.id}: {thread.summary}\nEvents: {len(thread.events)}"
+    else:
+        thread_context = f"New thread {input_data.thread_id}"
 
-    message_content =f"""
-    THREAD: {thread}
-    PROMPT: {prompt}
-    """
+    message_content = f"""{thread_context}\nPROMPT: {input_data.prompt}"""
     
     response = await complete(
         provider="openai",
@@ -164,7 +185,7 @@ Keep plans focused and efficient. Use parallel execution where possible.
 
 
 @subscribes_to_event("agent.decide")
-@register_event_schema("agent.decide")
+@register_event_schema("agent.decide", input_model=AgentDecideInput)
 async def agent_decide(event: Event) -> Dict[str, Any]:
     """Parameter completion and simple decisions - uses Ultra-light model.
     
@@ -182,6 +203,9 @@ async def agent_decide(event: Event) -> Dict[str, Any]:
     Returns:
         AgentDecideOutput as dict with action, params, and optional reason
     """
+
+    # Validate input data
+    input_data = AgentDecideInput(**event.data)
 
     # TODO: Add a "break" option to the action
 
@@ -217,15 +241,11 @@ EXAMPLES:
 
 """
 
-    schema = event.data.get('schema', {})
-    prompt = event.data.get('prompt', '')
-    params = event.data.get('params', {})
-
     # Build a comprehensive message template for decision-making
     message_content = f"""
-TASK: {prompt}
-- Event Schema: {schema}
-- Current Parameters: {params}
+TASK: {input_data.prompt}
+- Event Schema: {input_data.schema}
+- Current Parameters: {input_data.params}
 """
 
     response = await complete(

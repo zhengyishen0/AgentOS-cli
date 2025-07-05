@@ -19,7 +19,9 @@ class EventSchema:
     """Metadata about a registered event schema."""
 
     name: str
-    model: type[BaseModel]
+    handler: Callable  # The actual handler function
+    input_model: type[BaseModel] | None = None  # Input validation schema
+    output_model: type[BaseModel] | None = None  # Output schema (optional)
     publisher: str | None = None
     description: str | None = None
 
@@ -29,36 +31,42 @@ EVENT_REGISTRY: dict[str, EventSchema] = {}
 
 
 def register_event_schema(
-    event_name: str, publisher: str | None = None, description: str | None = None
+    event_name: str, 
+    input_model: type[BaseModel] | None = None,
+    publisher: str | None = None, 
+    description: str | None = None
 ):
-    """Decorator to register a Pydantic model as an event schema.
+    """Decorator to register an event handler with optional input/output schemas.
 
     Args:
-        event_name: The event type name (e.g., "calculation.completed")
+        event_name: The event type name (e.g., "task.schedule")
+        input_model: Optional Pydantic model for input validation
         publisher: Optional name of the publishing service
         description: Optional description of when this event is published
 
     Returns:
-        Decorator function that registers the model
+        Decorator function that registers the handler
 
     Example:
-        @register_event_schema("calculation.completed", publisher="CalculatorService")
-        class CalculationCompletedEvent(BaseModel):
-            operation: str
-            result: float
-            timestamp: datetime
+        @register_event_schema("task.schedule", input_model=TaskScheduleInput)
+        async def task_schedule(event: Event) -> Dict[str, Any]:
+            # Handler implementation
     """
 
-    def decorator(model_class: type[BaseModel]) -> type[BaseModel]:
+    def decorator(handler_func: Callable) -> Callable:
         if event_name in EVENT_REGISTRY:
             logger.warning(f"Overriding existing event schema: {event_name}")
 
         EVENT_REGISTRY[event_name] = EventSchema(
-            name=event_name, model=model_class, publisher=publisher, description=description
+            name=event_name,
+            handler=handler_func,
+            input_model=input_model,
+            publisher=publisher, 
+            description=description
         )
 
-        logger.debug(f"Registered event schema: {event_name} -> {model_class.__name__}")
-        return model_class
+        logger.debug(f"Registered event schema: {event_name} -> {handler_func.__name__}")
+        return handler_func
 
     return decorator
 
@@ -76,7 +84,7 @@ def get_event_schema(event_name: str) -> EventSchema | None:
 
 
 def validate_event_data(event_name: str, data: dict[str, Any]) -> BaseModel:
-    """Validate event data against registered schema.
+    """Validate event data against registered input schema.
 
     Args:
         event_name: The event type name
@@ -86,14 +94,17 @@ def validate_event_data(event_name: str, data: dict[str, Any]) -> BaseModel:
         Validated Pydantic model instance
 
     Raises:
-        ValueError: If event type is not registered
+        ValueError: If event type is not registered or has no input schema
         ValidationError: If data doesn't match schema
     """
     schema = get_event_schema(event_name)
     if not schema:
         raise ValueError(f"No schema registered for event type: {event_name}")
+    
+    if not schema.input_model:
+        raise ValueError(f"No input schema defined for event type: {event_name}")
 
-    return schema.model(**data)
+    return schema.input_model(**data)
 
 
 def list_registered_events() -> dict[str, EventSchema]:

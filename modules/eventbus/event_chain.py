@@ -132,7 +132,7 @@ class EventChainExecutor:
         chain_event = ChainEvent(
             event=event_spec['event'],
             params=event_spec.get('params', {}),
-            decide=event_spec.get('decide'),
+            decide=event_spec.get('decide', None),
             timestamp=datetime.now(timezone.utc).isoformat()
         )
         

@@ -1,19 +1,30 @@
 """System event handlers for AgentOS."""
 
+from datetime import datetime, timezone
 from typing import Dict, Any
+from pydantic import BaseModel, Field
 from ..event_registry import register_event_schema
 from ..event_bus import Event
 
 
-@register_event_schema("user.input")
-async def user_input(event: Event) -> None:
+class UserInputInput(BaseModel):
+    """Input schema for user.input event."""
+    text: str = Field(description="User input text")
+
+
+@register_event_schema("user.input", input_model=UserInputInput)
+async def user_input(event: Event) -> Dict[str, Any]:
     """User input received"""
-    message = event.data.get('message', '')
-    thread_id = event.data.get('thread_id')
+    # Validate input data
+    input_data = UserInputInput(**event.data)
     
-    # Mock: Log user input
-    print(f"[User] {message}")
-    return None
+    # Return processed user input with metadata
+    return {
+        "text": input_data.text,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "length": len(input_data.text),
+        "processed": True
+    }
 
 
 @register_event_schema("user.notify")
