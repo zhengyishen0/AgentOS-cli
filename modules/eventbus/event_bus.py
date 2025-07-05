@@ -4,15 +4,15 @@ Provides a concurrent event bus with optional persistence for loosely coupled co
 """
 
 import asyncio
-import json
 import logging
 from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any, Optional, Type
 from pydantic import BaseModel, ValidationError
+
+from modules.persistence import EventStorage
 
 logger = logging.getLogger(__name__)
 
@@ -38,33 +38,43 @@ class Event:
 
 
 class ConcurrentEventBus():
-    """Concurrent event bus with optional file persistence.
+    """Concurrent event bus with optional time-series persistence.
     
     Features:
     - Concurrent handler execution for the same event type
     - Same handler can process multiple events simultaneously
-    - Optional JSONL file persistence for event history
+    - Optional daily-partitioned event persistence
     - Schema validation with Pydantic models
     
     For distributed systems, consider Redis Pub/Sub, RabbitMQ, or Kafka.
     """
 
-    def __init__(self, persistence_file: Optional[str] = None, max_history_size: int = 1000):
+    def __init__(self, 
+                 persistence_enabled: bool = False,
+                 persistence_path: str = "data/events",
+                 max_history_size: int = 1000,
+                 retention_days: Optional[int] = 30):
         """Initialize the concurrent event bus.
         
         Args:
-            persistence_file: Optional path to JSONL file for event persistence
+            persistence_enabled: Enable time-series persistence
+            persistence_path: Path to directory for event storage
             max_history_size: Maximum number of events to keep in memory
+            retention_days: Number of days to retain events (None for no cleanup)
         """
         self._handlers: dict[str, list[Callable]] = defaultdict(list)
         self._schemas: dict[str, Type[BaseModel]] = {}
         self._event_history: list[Event] = []
         self._max_history_size = max_history_size
-        self._persistence_file = Path(persistence_file) if persistence_file else None
         
-        # Load existing events from persistence file if it exists
-        if self._persistence_file and self._persistence_file.exists():
-            self._load_events_from_file()
+        # Initialize event storage for persistence
+        self._storage = None
+        if persistence_enabled:
+            self._storage = EventStorage(
+                storage_path=persistence_path,
+                daily_partitions=True,
+                retention_days=retention_days
+            )
     
     def register(self, event_type: str, schema: Optional[Type[BaseModel]] = None):
         """Decorator to register event handlers with optional schema validation.
@@ -123,9 +133,9 @@ class ConcurrentEventBus():
         if len(self._event_history) > self._max_history_size:
             self._event_history.pop(0)
             
-        # Persist event to file if configured
-        if self._persistence_file:
-            await self._persist_event(event)
+        # Persist event to storage if configured
+        if self._storage:
+            await self._storage.save_event(event)
 
         # Log event
         logger.info(f"Publishing event: {event_type} from {source}")
@@ -208,14 +218,7 @@ class ConcurrentEventBus():
             raise
 
     def get_event_history(self, event_type: str | None = None) -> list[Event]:
-        """Get event history, optionally filtered by type.
-
-        Args:
-            event_type: Optional event type to filter by
-
-        Returns:
-            List of events
-        """
+        """Get event history, optionally filtered by type."""
         if event_type:
             return [e for e in self._event_history if e.type == event_type]
         return self._event_history.copy()
@@ -225,135 +228,17 @@ class ConcurrentEventBus():
         self._event_history.clear()
     
     def list_events(self) -> dict[str, list[str]]:
-        """List all events and their handlers.
-        
-        Returns:
-            Dict mapping event types to list of handler names
-        """
+        """List all events and their handlers."""
         return {event: [h.__name__ for h in handlers] 
                 for event, handlers in self._handlers.items()}
     
     def get_schema(self, event_type: str) -> Optional[Type[BaseModel]]:
-        """Get schema for an event type.
-        
-        Args:
-            event_type: The event type
-            
-        Returns:
-            The Pydantic schema class or None
-        """
+        """Get schema for an event type."""
         return self._schemas.get(event_type)
     
     def has_handler(self, event_type: str) -> bool:
-        """Check if handlers exist for an event type.
-        
-        Args:
-            event_type: The event type
-            
-        Returns:
-            True if handlers exist
-        """
+        """Check if handlers exist for an event type."""
         return event_type in self._handlers and len(self._handlers[event_type]) > 0
     
-    async def _persist_event(self, event: Event) -> None:
-        """Persist event to JSONL file asynchronously.
-        
-        Args:
-            event: Event to persist
-        """
-        try:
-            # Convert event to dict and write as JSON line
-            event_data = event.to_dict()
-            event_line = json.dumps(event_data) + '\n'
-            
-            # Append to file asynchronously
-            loop = asyncio.get_event_loop()
-            await loop.run_in_executor(None, self._write_event_line, event_line)
-            
-        except Exception as e:
-            logger.error(f"Failed to persist event: {e}")
-    
-    def _write_event_line(self, event_line: str) -> None:
-        """Write event line to persistence file (runs in thread pool).
-        
-        Args:
-            event_line: JSON line to write
-        """
-        # Ensure directory exists
-        self._persistence_file.parent.mkdir(parents=True, exist_ok=True)
-        
-        # Append event line to file
-        with open(self._persistence_file, 'a', encoding='utf-8') as f:
-            f.write(event_line)
-    
-    def _load_events_from_file(self) -> None:
-        """Load events from persistence file into memory on startup."""
-        try:
-            with open(self._persistence_file, 'r', encoding='utf-8') as f:
-                for line_num, line in enumerate(f, 1):
-                    line = line.strip()
-                    if not line:
-                        continue
-                        
-                    try:
-                        event_data = json.loads(line)
-                        # Convert back to Event object
-                        event = Event(
-                            type=event_data['type'],
-                            data=event_data['data'],
-                            timestamp=datetime.fromisoformat(event_data['timestamp'].replace('Z', '+00:00')),
-                            source=event_data['source']
-                        )
-                        self._event_history.append(event)
-                        
-                        # Respect max history size
-                        if len(self._event_history) > self._max_history_size:
-                            self._event_history.pop(0)
-                            
-                    except json.JSONDecodeError as e:
-                        logger.warning(f"Invalid JSON on line {line_num}: {e}")
-                    except KeyError as e:
-                        logger.warning(f"Missing required field on line {line_num}: {e}")
-                        
-            logger.info(f"Loaded {len(self._event_history)} events from {self._persistence_file}")
-            
-        except Exception as e:
-            logger.error(f"Failed to load events from file: {e}")
-    
-    def get_persistence_stats(self) -> dict[str, Any]:
-        """Get statistics about persistence file.
-        
-        Returns:
-            Dict with file stats or None if no persistence configured
-        """
-        if not self._persistence_file:
-            return {"persistence_enabled": False}
-            
-        try:
-            if self._persistence_file.exists():
-                stat = self._persistence_file.stat()
-                with open(self._persistence_file, 'r', encoding='utf-8') as f:
-                    line_count = sum(1 for line in f if line.strip())
-                    
-                return {
-                    "persistence_enabled": True,
-                    "file_path": str(self._persistence_file),
-                    "file_size_bytes": stat.st_size,
-                    "total_events_persisted": line_count,
-                    "events_in_memory": len(self._event_history)
-                }
-            else:
-                return {
-                    "persistence_enabled": True,
-                    "file_path": str(self._persistence_file),
-                    "file_size_bytes": 0,
-                    "total_events_persisted": 0,
-                    "events_in_memory": len(self._event_history)
-                }
-        except Exception as e:
-            logger.error(f"Failed to get persistence stats: {e}")
-            return {"persistence_enabled": True, "error": str(e)}
-
-
 # Global event bus instance (no persistence by default)
 eventbus = ConcurrentEventBus()

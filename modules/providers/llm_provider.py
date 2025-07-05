@@ -40,7 +40,7 @@ async def get_available_models(provider: str) -> List[str]:
     models = await client.models.list()
     return [model.id for model in models.data]
 
-async def complete(provider: str, model: str, messages: List[Dict], system: str = "", response_format: any = None, config: Dict = None) -> str:
+async def llm(provider: str, model: str, messages: List[Dict], system: str = "", response_format: any = None, config: Dict = None) -> str:
     """Complete a chat request using the specified provider and model
     
     Args:

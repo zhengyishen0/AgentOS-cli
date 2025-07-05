@@ -3,14 +3,14 @@
 Threads are event chains that maintain conversation context and history.
 """
 
-import json
 import logging
 import uuid
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 import asyncio
-from pathlib import Path
+
+from modules.persistence import ThreadStorage
 
 logger = logging.getLogger(__name__)
 
@@ -99,15 +99,13 @@ class Thread:
 class ThreadManager:
     """Manages thread persistence and retrieval."""
     
-    def __init__(self, storage_path: str = "./threads"):
+    def __init__(self, storage_path: str = "data/threads"):
         """Initialize thread manager.
         
         Args:
             storage_path: Directory to store thread files
         """
-        self.storage_path = Path(storage_path)
-        self.storage_path.mkdir(exist_ok=True)
-        self._thread_cache: Dict[str, Thread] = {}
+        self._storage = ThreadStorage(storage_path=storage_path)
         self._lock = asyncio.Lock()
     
     async def create_thread(self, thread_id: Optional[str] = None, summary: Optional[str] = None) -> Thread:
@@ -131,14 +129,9 @@ class ThreadManager:
             if not summary:
                 summary = f"Thread created at {datetime.now().strftime('%Y-%m-%d %H:%M')}"
             
-            # Check uniqueness in cache
-            if thread_id in self._thread_cache:
-                raise ValueError(f"Thread {thread_id} already exists in cache")
-            
-            # Check uniqueness on disk
-            thread_file = self.storage_path / f"{thread_id}.json"
-            if thread_file.exists():
-                raise ValueError(f"Thread {thread_id} already exists on disk")
+            # Check uniqueness
+            if await self._storage.exists(thread_id):
+                raise ValueError(f"Thread {thread_id} already exists")
             
             thread = Thread(
                 thread_id=thread_id,
@@ -151,9 +144,8 @@ class ThreadManager:
                 result={"thread_id": thread_id, "summary": summary}
             )
             
-            # Save to disk and cache
-            await self._save_thread(thread)
-            self._thread_cache[thread_id] = thread
+            # Save to storage
+            await self._storage.save(thread_id, thread.to_dict())
             
             logger.info(f"Created thread {thread_id}")
             return thread
@@ -167,25 +159,11 @@ class ThreadManager:
         Returns:
             Thread object or None if not found
         """
-        async with self._lock:
-            # Check cache first
-            if thread_id in self._thread_cache:
-                return self._thread_cache[thread_id]
-            
-            # Try loading from disk
-            thread_file = self.storage_path / f"{thread_id}.json"
-            if thread_file.exists():
-                try:
-                    with open(thread_file, 'r') as f:
-                        data = json.load(f)
-                    thread = Thread.from_dict(data)
-                    self._thread_cache[thread_id] = thread
-                    return thread
-                except Exception as e:
-                    logger.error(f"Failed to load thread {thread_id}: {e}")
-                    return None
-            
-            return None
+        # Load from storage
+        thread_data = await self._storage.load(thread_id)
+        if thread_data:
+            return Thread.from_dict(thread_data)
+        return None
     
     
     async def list_threads(self, status: Optional[str] = None) -> List[Thread]:
@@ -199,21 +177,14 @@ class ThreadManager:
         """
         threads = []
         
-        # Load all thread files
-        for thread_file in self.storage_path.glob("*.json"):
+        # Stream threads from storage
+        async for thread_id, thread_data in self._storage.stream_all(status):
             try:
-                with open(thread_file, 'r') as f:
-                    data = json.load(f)
-                thread = Thread.from_dict(data)
-                
-                if status is None or thread.status == status:
-                    threads.append(thread)
-                    
+                thread = Thread.from_dict(thread_data)
+                threads.append(thread)
             except Exception as e:
-                logger.error(f"Failed to load thread from {thread_file}: {e}")
+                logger.error(f"Failed to parse thread {thread_id}: {e}")
         
-        # Sort by updated_at descending
-        threads.sort(key=lambda t: t.updated_at, reverse=True)
         return threads
     
     async def archive_thread(self, thread_id: str) -> bool:
@@ -233,12 +204,8 @@ class ThreadManager:
                 result={"thread_id": thread_id}
             )
             
-            # Save changes and remove from cache
-            await self._save_thread(thread)
-            
-            # Remove from cache to save memory
-            if thread_id in self._thread_cache:
-                del self._thread_cache[thread_id]
+            # Save changes
+            await self._storage.save(thread_id, thread.to_dict())
                 
             return True
         return False
@@ -254,34 +221,21 @@ class ThreadManager:
             List of matching threads
         """
         matches = []
-        query_lower = query.lower()
         
-        for thread in await self.list_threads(status="active"):
-            # Search in summary
-            if query_lower in thread.summary.lower():
-                matches.append(thread)
-                continue
-                
-            # Search in recent events
-            for event in thread.events[-20:]:  # Search last 20 events
-                if query_lower in json.dumps(event.result).lower():
+        # Use storage search capabilities
+        search_results = await self._storage.search(query, limit)
+        
+        for thread_id, metadata in search_results:
+            thread_data = await self._storage.load(thread_id)
+            if thread_data:
+                try:
+                    thread = Thread.from_dict(thread_data)
                     matches.append(thread)
-                    break
-            
-            if len(matches) >= limit:
-                break
+                except Exception as e:
+                    logger.error(f"Failed to parse thread {thread_id}: {e}")
         
-        return matches[:limit]
+        return matches
     
-    async def _save_thread(self, thread: Thread):
-        """Save thread to disk."""
-        thread_file = self.storage_path / f"{thread.thread_id}.json"
-        try:
-            with open(thread_file, 'w') as f:
-                json.dump(thread.to_dict(), f, indent=2)
-        except Exception as e:
-            logger.error(f"Failed to save thread {thread.thread_id}: {e}")
-            raise
     
     async def add_event_to_thread(self, thread_id: str, event: ThreadEvent) -> bool:
         """Add an event to a thread.
@@ -302,9 +256,8 @@ class ThreadManager:
         thread.events.append(event)
         thread.updated_at = datetime.now(timezone.utc).isoformat()
         
-        # Save to disk and update cache
-        await self._save_thread(thread)
-        self._thread_cache[thread_id] = thread
+        # Save to storage
+        await self._storage.save(thread_id, thread.to_dict())
         return True
     
 

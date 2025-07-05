@@ -6,7 +6,7 @@ from ..event_schemas import (
     AgentChainOutput, AgentThinkOutput, AgentDecideOutput
 )
 from ..event_bus import Event, eventbus
-from modules.agents.llm_provider import complete
+from modules.providers.llm_provider import llm
 from modules.eventbus.thread_manager import thread_manager
 
 
@@ -68,7 +68,7 @@ Chain: [
 ]
 """
 
-    response = await complete(
+    response = await llm(
         provider="openai",
         model="gpt-4.1-nano",
         messages=[{"role": "user", "content": f"PLAN: {input_data.plan}"}],
@@ -130,7 +130,7 @@ Keep plans focused and efficient. Use parallel execution where possible.
 
     message_content = f"""{thread_context}\nPROMPT: {input_data.prompt}"""
     
-    response = await complete(
+    response = await llm(
         provider="openai",
         model="gpt-4o-mini",
         messages=[{"role": "user", "content": message_content}],
@@ -204,7 +204,7 @@ TASK: {input_data.prompt}
 - Current Parameters: {input_data.params}
 """
 
-    response = await complete(
+    response = await llm(
         provider="openai",
         model="gpt-4.1-nano",
         messages=[{"role": "user", "content": message_content}],
