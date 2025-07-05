@@ -274,7 +274,7 @@ class EventChainExecutor:
             }
         )   
 
-        completed_params = decision['params']
+        completed_params = decision.get('params', params)  # fallback to original params
         return completed_params
     
     async def _publish_and_wait(self, event: Event) -> Any:
