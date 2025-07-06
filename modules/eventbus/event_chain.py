@@ -16,7 +16,7 @@ from pydantic import BaseModel
 
 from .event_bus import Event, eventbus
 from .parameter_interpolator import ParameterInterpolator
-from .thread_manager import thread_manager
+from ..providers.thread_manager import thread_manager
 
 
 logger = logging.getLogger(__name__)

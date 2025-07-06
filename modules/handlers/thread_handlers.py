@@ -3,9 +3,9 @@
 from datetime import datetime, timezone
 from typing import Dict, Any
 import uuid
-from ..event_schemas import ThreadMatchInput, ThreadSummarizeInput, ThreadCreateInput, ThreadArchivedInput
-from ..event_bus import Event, eventbus
-from ..thread_manager import ThreadManager
+from ..eventbus.event_schemas import ThreadMatchInput, ThreadSummarizeInput, ThreadCreateInput, ThreadArchivedInput
+from ..eventbus.event_bus import Event, eventbus
+from ..providers.thread_manager import ThreadManager
 
 
 @eventbus.register("thread.match", schema=ThreadMatchInput)
@@ -24,7 +24,7 @@ async def thread_match(event: Event) -> Dict[str, Any]:
         best_match = threads[0]
         return {
             "action": "continue",
-            "thread_id": best_match.id,
+            "thread_id": best_match.thread_id,
             "confidence": 0.8,
             "summary": best_match.summary
         }
@@ -35,7 +35,7 @@ async def thread_match(event: Event) -> Dict[str, Any]:
         )
         return {
             "action": "new",
-            "thread_id": new_thread.id,
+            "thread_id": new_thread.thread_id,
             "confidence": 1.0,
             "summary": new_thread.summary
         }

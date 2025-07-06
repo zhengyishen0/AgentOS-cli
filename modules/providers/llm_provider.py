@@ -61,7 +61,7 @@ async def llm(provider: str, model: str, messages: List[Dict], system: str = "",
     
     # Get client and make the call
     client = _get_client(provider)
-    response = await client.chat.completions.create(
+    response = await client.chat.completions.parse(
         model=model,
         messages=messages,
         response_format=response_format,

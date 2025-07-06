@@ -1,13 +1,16 @@
 """Agent-related event handlers for AgentOS."""
 
 from typing import Dict, Any
-from ..event_schemas import (
+from ..eventbus.event_schemas import (
     AgentChainInput, AgentThinkInput, AgentDecideInput,
     AgentChainOutput, AgentThinkOutput, AgentDecideOutput
 )
-from ..event_bus import Event, eventbus
+from ..eventbus.event_bus import Event, eventbus
 from modules.providers.llm_provider import llm
-from modules.eventbus.thread_manager import thread_manager
+from modules.providers.thread_manager import thread_manager
+import dotenv
+
+dotenv.load_dotenv()
 
 
 @eventbus.register("agent.chain", schema=AgentChainInput)
@@ -20,7 +23,7 @@ async def agent_chain(event: Event) -> Dict[str, Any]:
     
     Args:
         event: Event containing:
-            - plan: The pseudocode plan to convert into an event chain
+            - message: The pseudocode plan to convert into an event chain
         
     Returns:
         AgentChainOutput as dict with chain of events to execute
@@ -71,7 +74,7 @@ Chain: [
     response = await llm(
         provider="openai",
         model="gpt-4.1-nano",
-        messages=[{"role": "user", "content": f"PLAN: {input_data.plan}"}],
+        messages=[{"role": "user", "content": f"PLAN: {input_data.message}"}],
         system=system_prompt,
         response_format=AgentChainOutput
     )
@@ -152,7 +155,7 @@ async def agent_decide(event: Event) -> Dict[str, Any]:
     
     Args:
         event: Event containing:
-            - schema: The schema of the event being evaluated
+            - event_schema: The schema of the event being evaluated
             - prompt: The prompt for the decision
             - params: The parameters to pass to the condition
         
@@ -200,7 +203,7 @@ EXAMPLES:
     # Build a comprehensive message template for decision-making
     message_content = f"""
 TASK: {input_data.prompt}
-- Event Schema: {input_data.schema}
+- Event Schema: {input_data.event_schema}
 - Current Parameters: {input_data.params}
 """
 

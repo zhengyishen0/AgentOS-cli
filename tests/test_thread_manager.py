@@ -7,7 +7,7 @@ import tempfile
 import shutil
 from pathlib import Path
 from datetime import datetime, timezone
-from modules.eventbus.thread_manager import ThreadManager, Thread, ThreadEvent
+from modules.providers.thread_manager import ThreadManager, Thread, ThreadEvent
 
 
 class TestThreadEvent:

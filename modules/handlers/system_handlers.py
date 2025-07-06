@@ -2,8 +2,9 @@
 
 from datetime import datetime, timezone
 from typing import Dict, Any
-from ..event_schemas import UserInputInput, UserNotifyInput, WebSearchInput
-from ..event_bus import Event, eventbus
+from ..eventbus.event_schemas import UserInputInput, UserNotifyInput, WebSearchInput
+from ..eventbus.event_bus import Event, eventbus
+from ..providers.cli_provider import CLIProvider
 
 
 @eventbus.register("user.input", schema=UserInputInput)
@@ -27,8 +28,9 @@ async def user_notify(event: Event) -> None:
     message = event.data.get('message', '')
     notify_type = event.data.get('type', 'info')
     
-    # Mock: Print notification
-    print(f"[{notify_type.upper()}] {message}")
+    # Use CLI provider for notifications
+    cli_provider = CLIProvider()
+    cli_provider.display_output(message, notify_type)
     return None
 
 

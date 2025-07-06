@@ -32,7 +32,7 @@ class TaskListInput(BaseModel):
 # Agent Event Schemas
 class AgentChainInput(BaseModel):
     """Input schema for agent.chain event."""
-    plan: str = Field(description="The pseudocode plan to convert into an event chain")
+    message: str = Field(description="The pseudocode plan to convert into an event chain")
 
 
 class AgentThinkInput(BaseModel):
@@ -43,7 +43,7 @@ class AgentThinkInput(BaseModel):
 
 class AgentDecideInput(BaseModel):
     """Input schema for agent.decide event."""
-    schema: Dict[str, Any] = Field(description="The schema of the event being evaluated")
+    event_schema: Dict[str, Any] = Field(description="The schema of the event being evaluated")
     prompt: str = Field(description="The prompt for the decision")
     params: Dict[str, Any] = Field(default_factory=dict, description="The parameters to pass to the condition")
 
@@ -60,11 +60,14 @@ class AgentChainOutput(BaseModel):
     """Output schema for agent.chain event."""
     chain: List[Union[ChainEventSpec, List[ChainEventSpec]]] = Field(description="List of events to execute (nested lists indicate parallel execution)")
 
+class AgentThinkParams(BaseModel):
+    """Parameters for the agent.think event."""
+    message: str = Field(description="The message to think about")
 
 class AgentThinkOutput(BaseModel):
     """Output schema for agent.think event."""
     event: Literal["agent.reply", "agent.chain"] = Field(description="Next event to trigger")
-    params: Dict[str, Any] = Field(description="Parameters for the next event")
+    params: AgentThinkParams = Field(description="Parameters for the next event")
 
 
 class AgentDecideOutput(BaseModel):
@@ -91,6 +94,9 @@ class ThreadCreateInput(BaseModel):
     summary: Optional[str] = Field(default=None, description="Optional initial summary")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Thread metadata")
 
+    class Config:
+        extra = "forbid"  # Prevent additional properties
+
 
 class ThreadArchivedInput(BaseModel):
     """Input schema for thread.archived event."""
@@ -104,6 +110,9 @@ class MemoryAppendInput(BaseModel):
     content: str = Field(description="Content to append to memory")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Content metadata")
     thread_id: Optional[str] = Field(default=None, description="Optional thread context")
+
+    class Config:
+        extra = "forbid"  # Prevent additional properties
 
 
 class MemorySearchInput(BaseModel):
