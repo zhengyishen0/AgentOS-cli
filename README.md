@@ -34,21 +34,21 @@ python run_hello.py
 
 The demo showcases the event-driven architecture:
 
-1. **User types a message** í CLI publishes `user.message` event
-2. **LLM Agent receives event** í Processes through OpenAI API
-3. **LLM Agent publishes response** í Sends `llm.response` event
-4. **CLI receives and displays** í Shows the AI response
+1. **User types a message** ÔøΩ CLI publishes `user.message` event
+2. **LLM Agent receives event** ÔøΩ Processes through OpenAI API
+3. **LLM Agent publishes response** ÔøΩ Sends `llm.response` event
+4. **CLI receives and displays** ÔøΩ Shows the AI response
 
 No direct coupling - everything flows through the event bus!
 
 ### Architecture
 
 ```
-User Input í CLI í Event Bus í LLM Agent í OpenAI
-                        ì
+User Input ÔøΩ CLI ÔøΩ Event Bus ÔøΩ LLM Agent ÔøΩ OpenAI
+                        ÔøΩ
                   Event Bus
-                        ì
-User Display ê CLI ê Event Bus ê LLM Agent
+                        ÔøΩ
+User Display ÔøΩ CLI ÔøΩ Event Bus ÔøΩ LLM Agent
 ```
 
 ### Event Types
@@ -57,6 +57,13 @@ User Display ê CLI ê Event Bus ê LLM Agent
 - `llm.response` - AI responds
 - `system.ready` - System initialized
 - `system.error` - Error occurred
+
+### AgentOS vs Claude Code: Key Differences
+
+1. claude code is agentic, building everything around the agent; agentos is context centric. so no worry about shut down sessions or thread/context switch
+2. claude code is essentially sequencial but also parallel capable; agentos is essentially parallel but operates in a sequencial way in most cases
+3. claude code is "work w/ you" although it clain the abilty to run autonomously while agentos is "work w/o you" as the trigger system (the task ability) let it run by itself
+4. the main use case of claude code is "focus mode" while agentos is "ambient mode"
 
 ### Next Steps
 

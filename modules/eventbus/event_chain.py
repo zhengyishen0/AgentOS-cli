@@ -50,22 +50,18 @@ class EventChainExecutor:
     def __init__(self):
         self.event_bus = eventbus
         self.thread_manager = thread_manager
-        self._execution_context: Dict[str, Any] = {}
         self._interpolator: Optional[ParameterInterpolator] = None
         
     async def execute_chain(
         self,
         chain: List[Union[Dict, List[Dict]]],
         thread_id: str,
-        initial_context: Optional[Dict[str, Any]] = None
     ) -> EventChainResult:
         """Execute an event chain.
         
         Args:
             chain: List of events or parallel event arrays
             thread_id: Thread ID for context
-            initial_context: Initial context values
-            
         Returns:
             EventChainResult with all execution details
         """
@@ -76,12 +72,8 @@ class EventChainExecutor:
             if thread:
                 thread_context = thread.get_context()
         
-        # Merge contexts
-        self._execution_context = {**thread_context, **(initial_context or {})}
-        self._execution_context['thread_id'] = thread_id
-        
-        # Create interpolator with context
-        self._interpolator = ParameterInterpolator(self._execution_context)
+        # Create interpolator with context - it owns the context
+        self._interpolator = ParameterInterpolator(thread_context)
         
         executed_events: List[ChainEvent] = []
         start_time = asyncio.get_event_loop().time()
@@ -176,8 +168,8 @@ class EventChainExecutor:
             result = await self._publish_and_wait(event)
             chain_event.result = result
             
-            # Store result in context for interpolation
-            self._store_result(chain_event.event, result)
+            # Store event result in interpolator's context.
+            self._interpolator.add_result(chain_event.event, result)
             
         except Exception as e:
             logger.error(f"Event execution failed: {e}")
@@ -295,21 +287,6 @@ class EventChainExecutor:
         )
         
         return result
-    
-    def _store_result(self, event_name: str, result: Any):
-        """Store event result in execution context."""
-        if self._interpolator:
-            self._interpolator.add_result(event_name, result)
-        else:
-            # Fallback if no interpolator
-            parts = event_name.split('.')
-            current = self._execution_context
-            for part in parts[:-1]:
-                if part not in current:
-                    current[part] = {}
-                current = current[part]
-            current[parts[-1]] = {'result': result}
-
 
 class EventChainBuilder:
     """Helper class to build event chains programmatically."""

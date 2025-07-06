@@ -6,6 +6,7 @@ from ..eventbus.event_schemas import (
     AgentChainOutput, AgentThinkOutput, AgentDecideOutput
 )
 from ..eventbus.event_bus import Event, eventbus
+from ..eventbus.event_chain import EventChainExecutor
 from modules.providers.llm_provider import llm
 from modules.providers.thread_manager import thread_manager
 import dotenv
@@ -79,7 +80,31 @@ Chain: [
         response_format=AgentChainOutput
     )
     
-    return response
+    # Convert Pydantic model to dict if needed
+    if hasattr(response, 'model_dump'):
+        chain_data = response.model_dump()
+    else:
+        chain_data = response
+    
+    # Extract the chain
+    chain = chain_data.get('chain', [])
+    thread_id = event.data.get('_thread_id', 'default')
+    
+    # Create executor and execute the chain
+    executor = EventChainExecutor()
+    execution_result = await executor.execute_chain(
+        chain=chain,
+        thread_id=thread_id
+    )
+    
+    # Return the execution result
+    return {
+        'success': execution_result.success,
+        'events': [e.__dict__ for e in execution_result.events],
+        'total_execution_time_ms': execution_result.total_execution_time_ms,
+        'error': execution_result.error,
+        'chain_definition': chain  # Include original chain for reference
+    }
 
 
 @eventbus.register("agent.think", schema=AgentThinkInput)
