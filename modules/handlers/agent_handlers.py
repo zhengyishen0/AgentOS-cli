@@ -2,13 +2,14 @@
 
 from typing import Dict, Any
 from ..eventbus.event_schemas import (
-    AgentChainInput, AgentThinkInput, AgentDecideInput,
-    AgentChainOutput, AgentThinkOutput, AgentDecideOutput
+    AgentChainInput, AgentChainOutput, AgentThinkInput, AgentThinkOutput, 
+    AgentDecideInput, AgentDecideOutput, AgentReplyInput
 )
 from ..eventbus.event_bus import Event, eventbus
 from ..eventbus.event_chain import EventChainExecutor
 from modules.providers.llm_provider import llm
 from modules.providers.thread_manager import thread_manager
+from modules.providers.cli_provider import CLIProvider
 import dotenv
 
 dotenv.load_dotenv()
@@ -241,3 +242,14 @@ TASK: {input_data.prompt}
     )
     
     return response
+
+
+@eventbus.register("agent.reply", schema=AgentReplyInput)
+async def agent_reply(event: Event) -> Dict[str, Any]:
+    """Send a reply to the user"""
+    input_data = AgentReplyInput(**event.data)
+
+    # Use global CLI provider for notifications
+    from modules import cli_provider
+    cli_provider.display_output(input_data.message, "agent")
+    return input_data

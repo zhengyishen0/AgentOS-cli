@@ -8,8 +8,7 @@ import asyncio
 import logging
 from typing import Dict, Any, Optional, List
 from datetime import datetime, timezone
-
-from ..eventbus.event_bus import eventbus, Event
+from ..eventbus.event_bus import eventbus
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +52,8 @@ class CLIProvider:
             "warning": "⚠️", 
             "error": "❌",
             "success": "✅",
-            "debug": "🐛"
+            "debug": "🐛",
+            "agent": "🤖",
         }
         
         icon = level_icons.get(level, "ℹ️")
@@ -133,51 +133,15 @@ class CLIProvider:
         Returns:
             Processing result
         """
-        # Publish user.input event
-        result = await self.publish_event("user.input", {"text": text})
+        # Publish user.input → thread.match → agent.think
+        result = await self.publish_event("thread.match", {"text": text})
         
         # If successful, continue with standard flow
         if not result.get("error"):
-            # Create a simple chain for processing
-            chain_result = await self._execute_processing_chain(text)
-            return chain_result
-        
-        return result
-    
-    async def _execute_processing_chain(self, text: str) -> Dict[str, Any]:
-        """Execute a processing chain for user input.
-        
-        Args:
-            text: User input text
-            
-        Returns:
-            Chain execution result
-        """
-        try:
-            # Simple chain: user.input → thread.match → agent.think
-            thread_result = await self.publish_event("thread.match", {"input": text})
-            
-            if thread_result.get("error"):
-                return {"error": f"Thread matching failed: {thread_result['error']}"}
-            
-            thread_id = thread_result.get("thread_id", "default")
-            
-            agent_result = await self.publish_event("agent.think", {
-                "thread_id": thread_id,
-                "prompt": text
-            })
-            
-            return {
-                "success": True,
-                "thread_id": thread_id,
-                "agent_result": agent_result,
-                "total_execution_time_ms": 0  # Could be calculated if needed
-            }
-            
-        except Exception as e:
-            logger.error(f"Chain execution failed: {e}")
-            return {"error": str(e)}
-    
+            return result
+        else:
+            return {"error": "Failed to process user input"}
+
     def parse_command(self, input_text: str) -> Optional[Dict[str, Any]]:
         """Parse user input to determine if it's a special command.
         
@@ -339,19 +303,4 @@ user.input → thread.match → agent.think
             event_type = getattr(event, 'type', 'Unknown')
             source = getattr(event, 'source', 'Unknown')
             self.display_output(f"  {i+1}. [{timestamp}] {event_type} (from {source})", "debug")
-    
-    async def notify_user(self, message: str, level: str = "info") -> None:
-        """Send a notification to the user.
-        
-        Args:
-            message: Notification message
-            level: Notification level
-        """
-        # Publish user.notify event
-        await self.publish_event("user.notify", {
-            "message": message,
-            "type": level
-        })
-        
-        # Also display directly
-        self.display_output(message, level)
+

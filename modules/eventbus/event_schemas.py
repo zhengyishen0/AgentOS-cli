@@ -76,6 +76,14 @@ class AgentDecideOutput(BaseModel):
     params: Dict[str, Any] = Field(description="The updated/completed parameters")
     reason: Optional[str] = Field(default=None, description="Reason for skipping (if action is skip)")
 
+    class Config:
+        extra = "forbid"  # Prevent additional properties
+
+class AgentReplyInput(BaseModel):
+    """Input schema for agent.reply event."""
+    message: str = Field(description="Notification message")
+    level: str = Field(default="info", description="Notification level")
+    title: Optional[str] = Field(default=None, description="Optional notification title")
 
 # Thread Event Schemas
 class ThreadMatchInput(BaseModel):
@@ -130,17 +138,6 @@ class MemoryDigestInput(BaseModel):
 
 
 # System Event Schemas
-class UserInputInput(BaseModel):
-    """Input schema for user.input event."""
-    text: str = Field(description="User input text")
-
-
-class UserNotifyInput(BaseModel):
-    """Input schema for user.notify event."""
-    message: str = Field(description="Notification message")
-    level: str = Field(default="info", description="Notification level")
-    title: Optional[str] = Field(default=None, description="Optional notification title")
-
 
 class WebSearchInput(BaseModel):
     """Input schema for web.search event."""

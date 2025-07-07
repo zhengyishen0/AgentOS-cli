@@ -6,10 +6,7 @@ import asyncio
 import logging
 from typing import Dict, Any
 
-from modules.eventbus import eventbus
-from modules.eventbus.event_chain import EventChainExecutor
-from modules.providers.thread_manager import thread_manager
-from modules.providers.cli_provider import CLIProvider
+from modules import eventbus, cli_provider, thread_manager, executor
 
 # Import all event handlers to trigger registration
 from modules.handlers import (
@@ -34,8 +31,8 @@ class AgentOSRuntime:
     def __init__(self):
         self.event_bus = eventbus
         self.thread_manager = thread_manager
-        self.executor = EventChainExecutor()
-        self.cli = CLIProvider(self.event_bus)
+        self.executor = executor
+        self.cli = cli_provider
         self._initialized = False
     
     async def initialize(self):
