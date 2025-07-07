@@ -27,8 +27,6 @@ from .task_handlers import (
 )
 
 from .system_handlers import (
-    user_input,
-    user_notify,
     web_search
 )
 
@@ -55,8 +53,6 @@ __all__ = [
     'task_list',
     
     # System handlers
-    'user_input',
-    'user_notify',
     'web_search',
     
 ]

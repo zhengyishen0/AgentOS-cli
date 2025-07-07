@@ -3,42 +3,53 @@
 from datetime import datetime, timezone
 from typing import Dict, Any
 import uuid
-from ..eventbus.event_schemas import ThreadMatchInput, ThreadSummarizeInput, ThreadCreateInput, ThreadArchivedInput
+from ..eventbus.event_schemas import ThreadMatchInput, ThreadSummarizeInput, ThreadCreateInput, ThreadArchivedInput, AgentThreadOutput
 from ..eventbus.event_bus import Event, eventbus
-from ..providers.thread_manager import ThreadManager
+from modules import thread_manager
 
 
 @eventbus.register("thread.match", schema=ThreadMatchInput)
 async def thread_match(event: Event) -> Dict[str, Any]:
     """Determine which thread a message belongs to"""
     # Validate input data
+    confidence_threshold = 0.5
     input_data = ThreadMatchInput(**event.data)
+    thread_data = await thread_manager.thread_summary()
     
-    thread_manager = ThreadManager()
-    
-    # Search for existing threads that match the input
-    threads = await thread_manager.search_threads(input_data.input)
-    
-    if threads:
-        # Found matching thread - return the most relevant one
-        best_match = threads[0]
-        return {
-            "action": "continue",
-            "thread_id": best_match.thread_id,
-            "confidence": 0.8,
-            "summary": best_match.summary
-        }
-    else:
-        # No matching thread found - create a new one
-        new_thread = await thread_manager.create_thread(
-            summary=f"Discussion about: {input_data.input[:50]}..."
+    thread_confidence = await eventbus.publish(
+        Event(
+            type="agent.thread",
+            data={"input": input_data.input, "thread_data": thread_data}
         )
-        return {
-            "action": "new",
-            "thread_id": new_thread.thread_id,
-            "confidence": 1.0,
-            "summary": new_thread.summary
-        }
+    )
+
+    if thread_confidence[input_data.thread_id] > confidence_threshold:
+        # Continue in the existing thread
+        thread_id = input_data.thread_id
+    else:
+        # Find the thread with highest confidence
+        max_confidence = 0
+        best_thread_id = None
+        
+        for thread_id, confidence in thread_confidence.items():
+            if confidence > max_confidence:
+                max_confidence = confidence
+                best_thread_id = thread_id
+        
+        if best_thread_id and max_confidence > confidence_threshold:
+            # Switch to the thread with highest confidence
+            thread_id = best_thread_id
+        else:
+            # Create a new thread if no good match found
+            new_thread = await thread_manager.create_thread(summary=f"New Thread")
+            thread_id = new_thread.thread_id
+    
+    eventbus.publish(
+        Event(
+            type="agent.think",
+            data={"thread_id": thread_id, "prompt": input_data.input}
+        )
+    )
 
 
 @eventbus.register("thread.summarize", schema=ThreadSummarizeInput)

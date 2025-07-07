@@ -165,6 +165,16 @@ class ThreadManager:
             return Thread.from_dict(thread_data)
         return None
     
+    async def thread_summary(self) -> List[str]:
+        """Get the summary of current active thread
+            
+        Returns:
+            List of thread summaries
+        """
+        # Load from storage
+        threads = await self.list_threads(status="active")
+        return [f"{thread.thread_id}: {thread.summary}" for thread in threads]
+    
     
     async def list_threads(self, status: Optional[str] = None) -> List[Thread]:
         """List all threads.

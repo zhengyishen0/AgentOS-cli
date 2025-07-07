@@ -1,18 +1,18 @@
 """Agent-related event handlers for AgentOS."""
 
+from openai import OpenAI
+
 from typing import Dict, Any
 from ..eventbus.event_schemas import (
     AgentChainInput, AgentChainOutput, AgentThinkInput, AgentThinkOutput, 
-    AgentDecideInput, AgentDecideOutput, AgentReplyInput
+    AgentDecideInput, AgentDecideOutput, AgentReplyInput, AgentThreadInput, AgentThreadOutput
 )
 from ..eventbus.event_bus import Event, eventbus
 from ..eventbus.event_chain import EventChainExecutor
-from modules.providers.llm_provider import llm
 from modules.providers.thread_manager import thread_manager
-from modules.providers.cli_provider import CLIProvider
-import dotenv
 
-dotenv.load_dotenv()
+
+client = OpenAI()
 
 
 @eventbus.register("agent.chain", schema=AgentChainInput)
@@ -73,29 +73,22 @@ Chain: [
 ]
 """
 
-    response = await llm(
-        provider="openai",
+    response = client.responses.parse(
         model="gpt-4.1-nano",
-        messages=[{"role": "user", "content": f"PLAN: {input_data.message}"}],
-        system=system_prompt,
-        response_format=AgentChainOutput
+        input=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": f"PLAN: {input_data.message}"}
+        ],
+        text_format=AgentChainOutput
     )
     
-    # Convert Pydantic model to dict if needed
-    if hasattr(response, 'model_dump'):
-        chain_data = response.model_dump()
-    else:
-        chain_data = response
-    
-    # Extract the chain
-    chain = chain_data.get('chain', [])
-    thread_id = event.data.get('_thread_id', 'default')
+    data = response.output_parsed
     
     # Create executor and execute the chain
     executor = EventChainExecutor()
     execution_result = await executor.execute_chain(
-        chain=chain,
-        thread_id=thread_id
+        chain=data.get('chain', []),
+        thread_id=input_data.thread_id
     )
     
     # Return the execution result
@@ -104,7 +97,7 @@ Chain: [
         'events': [e.__dict__ for e in execution_result.events],
         'total_execution_time_ms': execution_result.total_execution_time_ms,
         'error': execution_result.error,
-        'chain_definition': chain  # Include original chain for reference
+        'chain_definition': data.get('chain', [])  # Include original chain for reference
     }
 
 
@@ -159,15 +152,17 @@ Keep plans focused and efficient. Use parallel execution where possible.
 
     message_content = f"""{thread_context}\nPROMPT: {input_data.prompt}"""
     
-    response = await llm(
-        provider="openai",
-        model="gpt-4o-mini",
-        messages=[{"role": "user", "content": message_content}],
-        system=system_prompt,
-        response_format=AgentThinkOutput
+    response = client.responses.parse(
+        model="gpt-4.1-nano",
+        input=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": message_content}
+        ],
+        text_format=AgentThinkOutput
     )
     
-    return response
+    print(response.output_parsed)
+    return response.output_parsed
 
 
 @eventbus.register("agent.decide", schema=AgentDecideInput)
@@ -233,15 +228,35 @@ TASK: {input_data.prompt}
 - Current Parameters: {input_data.params}
 """
 
-    response = await llm(
-        provider="openai",
+    response = client.responses.parse(
         model="gpt-4.1-nano",
-        messages=[{"role": "user", "content": message_content}],
-        system=system_prompt,
-        response_format=AgentDecideOutput
+        input=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": message_content}
+        ],
+        text_format=AgentDecideOutput
     )
     
-    return response
+    return response.output_parsed
+
+
+@eventbus.register("agent.thread", schema=AgentThreadInput)
+async def agent_thread(event: Event) -> Dict[str, Any]:
+    """Determine which thread a message belongs to"""
+    input_data = AgentThreadInput(**event.data)
+
+    # TODO: Replace with LLM
+    # agent.thread (input, thread_id) -> thread_id
+    # it will determine if the input belongs to the given thread_id or one of the active threads with confidence level
+
+    output = AgentThreadOutput(
+        thread_confidence={
+            "thread_id_1": 0.8,
+            "thread_id_2": 0.5
+        }
+    )
+    
+    return output
 
 
 @eventbus.register("agent.reply", schema=AgentReplyInput)

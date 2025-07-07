@@ -79,6 +79,22 @@ class AgentDecideOutput(BaseModel):
     class Config:
         extra = "forbid"  # Prevent additional properties
 
+class AgentThreadInput(BaseModel):
+    """Input schema for agent.thread event."""
+    input: str = Field(description="User input text to match against existing threads")
+    thread_data: Optional[Dict[str, Any]] = Field(default=None, description="Optional thread data to match against")
+
+class AgentThreadOutput(BaseModel):
+    """Output schema for agent.thread event. 
+    Example:
+    {
+        "thread_confidence": {
+            "thread_id_1": 0.8,
+            "thread_id_2": 0.5
+        }
+    }"""
+    thread_confidence: Dict[str, float] = Field(description="Confidence level for each thread")
+
 class AgentReplyInput(BaseModel):
     """Input schema for agent.reply event."""
     message: str = Field(description="Notification message")
@@ -89,6 +105,7 @@ class AgentReplyInput(BaseModel):
 class ThreadMatchInput(BaseModel):
     """Input schema for thread.match event."""
     input: str = Field(description="User input text to match against existing threads")
+    thread_id: Optional[str] = Field(default=None, description="Optional thread identifier to match against")
 
 
 class ThreadSummarizeInput(BaseModel):

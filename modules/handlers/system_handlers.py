@@ -2,7 +2,7 @@
 
 from datetime import datetime, timezone
 from typing import Dict, Any
-from ..eventbus.event_schemas import UserInputInput, UserNotifyInput, WebSearchInput
+from ..eventbus.event_schemas import WebSearchInput
 from ..eventbus.event_bus import Event, eventbus
 from ..providers.cli_provider import CLIProvider
 
