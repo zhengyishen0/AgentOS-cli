@@ -305,3 +305,10 @@ class WebSearchInput(BaseModel):
     query: str = Field(description="Search query")
     limit: Optional[int] = Field(default=10, description="Maximum number of results")
     source: Optional[str] = Field(default=None, description="Optional search source")
+
+class WebFetchInput(BaseModel):
+    """Input schema for web.fetch event.
+    
+    This event fetches the content of a web page.
+    """
+    url: str = Field(description="URL to fetch")

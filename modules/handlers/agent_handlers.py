@@ -75,7 +75,7 @@ Keep plans focused and efficient. Use parallel execution where possible.
     )
     
     output = response.output_parsed.model_dump()
-    # pprint(output)
+    pprint(output)
 
     # Add event to thread
     await thread_manager.add_event_to_thread(input_data.thread_id, ThreadEvent(
@@ -107,73 +107,93 @@ async def agent_chain(event: Event) -> Dict[str, Any]:
     # Validate input data
     input_data = AgentChainInput(**event.data)
 
-    system_prompt = """
+    registered_schemas = eventbus.list_schemas()
+
+    system_prompt = f"""
 You are a mechanical translation AI that converts plans into event chains. You have full knowledge of available events and their schemas.
 
 Your task is to:
 1. Parse the pseudocode plan
 2. Map each step to appropriate events
-3. Use parameter interpolation for data flow ({event.result} syntax)
+3. Use parameter interpolation for data flow ({{event.result}} syntax)
 4. Group parallel operations in arrays
 5. Always append agent.think at the end
+
+Registered tools you can use and their schemas:
+{json.dumps(registered_schemas, indent=2)}
 
 IMPORTANT RULES:
 - No reasoning or interpretation - just mechanical translation
 - Use exact event names and parameter structures
 - Preserve the plan's intent without optimization
 - Support these interpolation patterns:
-  - {event_name.result} - full result
-  - {event_name.result.field} - specific field
-  - {event_name.result[0]} - array access
+  - {{event_name.result}} - full result
+  - {{event_name.result.field}} - specific field
+  - {{event_name.result[0]}} - array access
+- You would make tasks parallel if you see multiple tasks in the plan, such as read 10 given url links, or any task that do not depend on each other
+- Make sure you use the result from the previous event in the next event if needed
 
 Example translation:
-Plan: "1. Get current date\n2. Add 7 days\n3. Format as ISO string"
+Plan: "1. Get current date\\n2. Add 7 days\\n3. Format as ISO string"
 Chain: [
-  {"event": "tools.now", "params": {}},
-  {"event": "tools.date_calc", "params": {"from": "{tools.now.result}", "add": "7 days"}},
-  {"event": "tools.format", "params": {"date": "{tools.date_calc.result}", "format": "ISO"}},
-  {"event": "agent.think", "params": {"thread_id": "current"}}
+  {{"event": "tools.now", "params": {{}}}},
+  {{"event": "tools.date_calc", "params": {{"from": "{{tools.now.result}}", "add": "7 days"}}}},
+  {{"event": "tools.format", "params": {{"date": "{{tools.date_calc.result}}", "format": "ISO"}}}},
+  {{"event": "agent.think", "params": {{"thread_id": "current"}}}}
 ]
 
 For parallel operations:
 Plan: "Get both marketing and engineering team members"  
 Chain: [
   [
-    {"event": "team.members", "params": {"team": "marketing"}},
-    {"event": "team.members", "params": {"team": "engineering"}}
+    {{"event": "team.members", "params": {{"team": "marketing"}}}},
+    {{"event": "team.members", "params": {{"team": "engineering"}}}}
   ],
-  {"event": "agent.think", "params": {"thread_id": "current"}}
+  {{"event": "agent.think", "params": {{"thread_id": "current"}}}}
 ]
+
+Example json format output:
+{{
+  "chain": [
+    {{"event": "tools.now", "params": {{}}}},
+    [  # parallel execution
+      {{"event": "tools.date_calc", "params": {{"from": "tools.now.result", "add": "7 days"}}}},
+      {{"event": "tools.format", "params": {{"date": "tools.date_calc.result", "format": "ISO"}}}}
+    ],
+    {{"event": "agent.think", "params": {{"thread_id": "current"}}}}
+  ]
+}}
 """
 
-    response = client.responses.parse(
-        model="gpt-4.1-nano",
-        input=[
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": f"PLAN: {input_data.message}"}
         ],
-        text_format=AgentChainOutput
+        response_format={"type": "json_object"}
     )
     
-    data = response.output_parsed
+    raw_data = response.choices[0].message.content
+    data = json.loads(raw_data)
 
     pprint(data)
     
-    # # Create executor and execute the chain
-    # executor = EventChainExecutor()
-    # execution_result = await executor.execute_chain(
-    #     chain=data.get('chain', []),
-    #     thread_id=input_data.thread_id
-    # )
+    # Create executor and execute the chain
+    executor = EventChainExecutor()
+    execution_result = await executor.execute_chain(
+        chain=data.get('chain', []),
+        thread_id=input_data.thread_id
+    )
     
-    # # Return the execution result
-    # return {
-    #     'success': execution_result.success,
-    #     'events': [e.__dict__ for e in execution_result.events],
-    #     'total_execution_time_ms': execution_result.total_execution_time_ms,
-    #     'error': execution_result.error,
-    #     'chain_definition': data.get('chain', [])  # Include original chain for reference
-    # }
+    # Return the execution result
+    return {
+        'success': execution_result.success,
+        'events': [e.__dict__ for e in execution_result.events],
+        'total_execution_time_ms': execution_result.total_execution_time_ms,
+        'error': execution_result.error,
+        'chain_definition': data.get('chain', [])  # Include original chain for reference
+    }
 
 
 @eventbus.register("agent.decide", schema=AgentDecideInput)
