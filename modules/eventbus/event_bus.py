@@ -232,9 +232,16 @@ class ConcurrentEventBus():
         return {event: [h.__name__ for h in handlers] 
                 for event, handlers in self._handlers.items()}
     
-    def get_schema(self, event_type: str) -> Optional[Type[BaseModel]]:
-        """Get schema for an event type."""
-        return self._schemas.get(event_type)
+    def get_schema(self, event_type: str) -> Optional[dict]:
+        """Get json schema for an event type."""
+        return self._schemas.get(event_type).model_json_schema()
+    
+    def list_schemas(self, brief: bool = False) -> dict[str, dict]:
+        """List all event schemas."""
+        if brief:
+            return {event: self.get_schema(event)["description"] for event in self._schemas}
+        else:
+            return {event: self.get_schema(event) for event in self._schemas}
     
     def has_handler(self, event_type: str) -> bool:
         """Check if handlers exist for an event type."""

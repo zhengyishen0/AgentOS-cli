@@ -210,13 +210,13 @@ class EventChainExecutor:
             
         return self._interpolator.interpolate(params)
     
-    async def _handle_decide(self, thread_id: str, prompt: str, params: Dict[str, Any], schema: Type[BaseModel]) -> Dict[str, str]:
+    async def _handle_decide(self, thread_id: str, prompt: str, params: Dict[str, Any], schema: dict) -> Dict[str, str]:
         """Handle conditional logic via agent.decide.
 
         Args:
             prompt: The condition to evaluate
             params: The parameters to pass to the condition
-            schema: The schema of the event being evaluated
+            schema: The json schema of the event being evaluated
         Returns:
             decision: 
                 'action': 'continue' or 'skip'
@@ -239,7 +239,7 @@ class EventChainExecutor:
     async def _complete_params(
         self,
         params: Dict[str, Any],
-        schema: Type[BaseModel],
+        schema: dict,
         validation_error: str,
         thread_id: str
     ) -> Dict[str, Any]:
@@ -247,7 +247,7 @@ class EventChainExecutor:
         
         Args:
             params: The parameters to complete
-            schema: The schema of the event being completed
+            schema: The json schema of the event being completed
             validation_error: The error message from parameter validation
         
         Returns:

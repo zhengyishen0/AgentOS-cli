@@ -2,7 +2,7 @@
 
 from datetime import datetime, timezone
 from openai import OpenAI
-
+import json
 from typing import Dict, Any
 from ..eventbus.event_schemas import (
     AgentChainInput, AgentChainOutput, AgentThinkInput, AgentThinkOutput, 
@@ -12,11 +12,80 @@ from ..eventbus.event_bus import Event
 from ..eventbus.event_chain import EventChainExecutor
 from modules.providers.thread_manager import ThreadEvent
 from modules import eventbus, thread_manager
-
-
-
+from pprint import pprint
 
 client = OpenAI()
+
+
+@eventbus.register("agent.think", schema=AgentThinkInput)
+async def agent_think(event: Event) -> Dict[str, Any]:
+    """Strategic planning and complex reasoning - uses Heavy model.
+    
+    This handler performs high-level reasoning and planning, deciding whether to:
+    1. Reply directly to the user (for simple requests)
+    2. Create a detailed plan for complex multi-step operations
+    """
+
+    # Validate input data
+    input_data = AgentThinkInput(**event.data)
+
+    registered_schemas = eventbus.list_schemas(brief=True)
+
+    system_prompt = f"""
+You are a strategic planning AI agent. Your role is to analyze user requests and decide the best approach.
+
+For SIMPLE requests that can be answered directly:
+- Return: {{"event": "agent.reply", "params": {{"message": "your direct answer"}}}}
+
+For COMPLEX requests requiring multiple steps:
+- Return: {{"event": "agent.chain", "params": {{"message": "pseudocode plan in bullet points"}}}}
+
+We have a list of tools you can use. This is their schemas:
+{json.dumps(registered_schemas, indent=2)}
+
+IMPORTANT:
+- The plan should be clear, step-by-step pseudocode that can be mechanically translated into events.
+
+Examples of complex requests:
+- Tasks involving multiple data sources
+- Multi-step calculations or transformations  
+- Operations requiring coordination between teams/systems
+- Time-based scheduling or planning
+
+Keep plans focused and efficient. Use parallel execution where possible.
+"""
+    
+    # Get thread context for full conversation history
+    thread = await thread_manager.get_thread(input_data.thread_id)
+    
+    # Format thread context for the LLM
+    thread_context = f"Thread {thread.thread_id}: {thread.summary}"
+    if len(thread.events) > 0:
+        thread_context += f"\nEvents: {len(thread.events)}"
+
+    message_content = f"""PROMPT: {input_data.prompt}\nTHREAD CONTEXT: {thread_context}"""
+    
+    response = client.responses.parse(
+        model="gpt-4.1-nano",
+        input=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": message_content}
+        ],
+        text_format=AgentThinkOutput
+    )
+    
+    output = response.output_parsed.model_dump()
+    # pprint(output)
+
+    # Add event to thread
+    await thread_manager.add_event_to_thread(input_data.thread_id, ThreadEvent(
+        event=output['event'],
+        result=output['params'],
+        timestamp=datetime.now(timezone.utc).isoformat()
+    ))
+    
+    # Publish the event
+    await eventbus.publish(output['event'], output['params'])
 
 
 @eventbus.register("agent.chain", schema=AgentChainInput)
@@ -87,87 +156,24 @@ Chain: [
     )
     
     data = response.output_parsed
+
+    pprint(data)
     
-    # Create executor and execute the chain
-    executor = EventChainExecutor()
-    execution_result = await executor.execute_chain(
-        chain=data.get('chain', []),
-        thread_id=input_data.thread_id
-    )
+    # # Create executor and execute the chain
+    # executor = EventChainExecutor()
+    # execution_result = await executor.execute_chain(
+    #     chain=data.get('chain', []),
+    #     thread_id=input_data.thread_id
+    # )
     
-    # Return the execution result
-    return {
-        'success': execution_result.success,
-        'events': [e.__dict__ for e in execution_result.events],
-        'total_execution_time_ms': execution_result.total_execution_time_ms,
-        'error': execution_result.error,
-        'chain_definition': data.get('chain', [])  # Include original chain for reference
-    }
-
-
-@eventbus.register("agent.think", schema=AgentThinkInput)
-async def agent_think(event: Event) -> Dict[str, Any]:
-    """Strategic planning and complex reasoning - uses Heavy model.
-    
-    This handler performs high-level reasoning and planning, deciding whether to:
-    1. Reply directly to the user (for simple requests)
-    2. Create a detailed plan for complex multi-step operations
-    """
-
-    # Validate input data
-    input_data = AgentThinkInput(**event.data)
-
-    system_prompt = """
-You are a strategic planning AI agent. Your role is to analyze user requests and decide the best approach.
-
-For SIMPLE requests that can be answered directly:
-- Return: {"event": "agent.reply", "params": {"message": "{your direct answer}"}}
-
-For COMPLEX requests requiring multiple steps:
-- Return: {"event": "agent.chain", "params": {"message": "{detailed pseudocode plan in bullet points}"}}
-
-The plan should be clear, step-by-step pseudocode that can be mechanically translated into events.
-
-Examples of complex requests:
-- Tasks involving multiple data sources
-- Multi-step calculations or transformations  
-- Operations requiring coordination between teams/systems
-- Time-based scheduling or planning
-
-Keep plans focused and efficient. Use parallel execution where possible.
-"""
-    
-    # Get thread context for full conversation history
-    thread = await thread_manager.get_thread(input_data.thread_id)
-    
-    # Format thread context for the LLM
-    if thread:
-        thread_context = f"Thread {thread.thread_id}: {thread.summary}\nEvents: {len(thread.events)}"
-    else:
-        thread_context = f"New thread {input_data.thread_id}"
-
-    message_content = f"""PROMPT: {input_data.prompt}\nTHREAD CONTEXT: {thread_context}"""
-    
-    response = client.responses.parse(
-        model="gpt-4.1-nano",
-        input=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": message_content}
-        ],
-        text_format=AgentThinkOutput
-    )
-    
-    output = response.output_parsed.model_dump()
-
-    # Add event to thread
-    await thread_manager.add_event_to_thread(input_data.thread_id, ThreadEvent(
-        event=output['event'],
-        result=output['params'],
-        timestamp=datetime.now(timezone.utc).isoformat()
-    ))
-    
-    # Publish the event
-    await eventbus.publish(output['event'], output['params'])
+    # # Return the execution result
+    # return {
+    #     'success': execution_result.success,
+    #     'events': [e.__dict__ for e in execution_result.events],
+    #     'total_execution_time_ms': execution_result.total_execution_time_ms,
+    #     'error': execution_result.error,
+    #     'chain_definition': data.get('chain', [])  # Include original chain for reference
+    # }
 
 
 @eventbus.register("agent.decide", schema=AgentDecideInput)
