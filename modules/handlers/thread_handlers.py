@@ -8,9 +8,11 @@ from ..eventbus.event_bus import Event, eventbus
 from modules import thread_manager
 
 
+# TODO: might be better to merge this with agent.thread
 @eventbus.register("thread.match", schema=ThreadMatchInput)
 async def thread_match(event: Event) -> Dict[str, Any]:
     """Determine which thread a message belongs to"""
+
     # Validate input data
     confidence_threshold = 0.5
     input_data = ThreadMatchInput(**event.data)
@@ -44,12 +46,13 @@ async def thread_match(event: Event) -> Dict[str, Any]:
             new_thread = await thread_manager.create_thread(summary=f"New Thread")
             thread_id = new_thread.thread_id
     
-    eventbus.publish(
-        Event(
-            type="agent.think",
-            data={"thread_id": thread_id, "prompt": input_data.input}
-        )
-    )
+    event = Event(
+                type="agent.think",
+                data={"thread_id": thread_id, "prompt": input_data.input}
+            )
+    
+    thread_manager.add_event_to_thread(thread_id, event)
+    eventbus.publish(event)
 
 
 @eventbus.register("thread.summarize", schema=ThreadSummarizeInput)

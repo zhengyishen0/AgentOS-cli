@@ -108,14 +108,6 @@ async def agent_think(event: Event) -> Dict[str, Any]:
     This handler performs high-level reasoning and planning, deciding whether to:
     1. Reply directly to the user (for simple requests)
     2. Create a detailed plan for complex multi-step operations
-    
-    Args:
-        event: Event containing:
-            - thread_id: The thread context identifier
-            - prompt: Specific prompt for mid-chain reasoning
-        
-    Returns:
-        AgentThinkOutput as dict with next event and params
     """
 
     # Validate input data
@@ -125,10 +117,10 @@ async def agent_think(event: Event) -> Dict[str, Any]:
 You are a strategic planning AI agent. Your role is to analyze user requests and decide the best approach.
 
 For SIMPLE requests that can be answered directly:
-- Return: {"event": "agent.reply", "params": {"message": "your direct answer"}}
+- Return: {"event": "agent.reply", "params": {"message": "{your direct answer}"}}
 
 For COMPLEX requests requiring multiple steps:
-- Return: {"event": "agent.chain", "params": {"plan": "detailed pseudocode plan"}}
+- Return: {"event": "agent.chain", "params": {"message": "{detailed pseudocode plan in bullet points}"}}
 
 The plan should be clear, step-by-step pseudocode that can be mechanically translated into events.
 
@@ -150,7 +142,7 @@ Keep plans focused and efficient. Use parallel execution where possible.
     else:
         thread_context = f"New thread {input_data.thread_id}"
 
-    message_content = f"""{thread_context}\nPROMPT: {input_data.prompt}"""
+    message_content = f"""PROMPT: {input_data.prompt}\nTHREAD CONTEXT: {thread_context}"""
     
     response = client.responses.parse(
         model="gpt-4.1-nano",
@@ -161,8 +153,15 @@ Keep plans focused and efficient. Use parallel execution where possible.
         text_format=AgentThinkOutput
     )
     
-    print(response.output_parsed)
-    return response.output_parsed
+    output = response.output_parsed
+
+    event = Event(
+        type=output.event,
+        data=output.params
+    )
+
+    thread_manager.add_event_to_thread(input_data.thread_id, event)
+    eventbus.publish(event)
 
 
 @eventbus.register("agent.decide", schema=AgentDecideInput)
@@ -173,15 +172,6 @@ async def agent_decide(event: Event) -> Dict[str, Any]:
     It's called in two scenarios:
     1. When a 'decide' field is present in an event spec for conditional logic
     2. When parameter validation fails and parameters need completion
-    
-    Args:
-        event: Event containing:
-            - event_schema: The schema of the event being evaluated
-            - prompt: The prompt for the decision
-            - params: The parameters to pass to the condition
-        
-    Returns:
-        AgentDecideOutput as dict with action, params, and optional reason
     """
 
     # Validate input data
@@ -251,8 +241,8 @@ async def agent_thread(event: Event) -> Dict[str, Any]:
 
     output = AgentThreadOutput(
         thread_confidence={
-            "thread_id_1": 0.8,
-            "thread_id_2": 0.5
+            "thread_id_1": 0.1,
+            "thread_id_2": 0.1
         }
     )
     
