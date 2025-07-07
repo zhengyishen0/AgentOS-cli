@@ -183,6 +183,8 @@ async def agent_decide(event: Event) -> Dict[str, Any]:
     # Validate input data
     input_data = AgentDecideInput(**event.data)
 
+    thread = await thread_manager.get_thread(input_data.thread_id)
+
     # TODO: Add a "break" option to the action
 
     system_prompt = """
@@ -202,13 +204,18 @@ Your task is to:
 1. Analyze the provided context and parameters
 2. Complete any missing required parameters based on the schema
 3. Evaluate any conditional logic (if present)
-4. Decide whether to continue or skip the event
+4. Decide whether to continue or skip the event if the required parameters can be completed
+
+IMPORTANT:
+- If the required parameters can be completed, you must continue the event
+- If the required parameters cannot be completed, you must skip the event
+- Do not make up parameters that are not in the schema or context
 
 RESPONSE FORMAT:
 You must respond with a JSON object containing:
 - "action": Either "continue" or "skip"
 - "params": The updated/completed parameters (even if unchanged)
-- "reason": Optional explanation for your decision (required if action is "skip")
+- "reason": Explanation for your decision (required if action is "skip")
 
 EXAMPLES:
 - If parameters are complete and conditions are met: {"action": "continue", "params": {...}}
@@ -222,18 +229,21 @@ EXAMPLES:
 TASK: {input_data.prompt}
 - Event Schema: {input_data.event_schema}
 - Current Parameters: {input_data.params}
+- Thread Context: {thread}
 """
 
-    response = client.responses.parse(
+    response =  client.chat.completions.create(
         model="gpt-4.1-nano",
-        input=[
+        messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": message_content}
         ],
-        text_format=AgentDecideOutput
+        response_format={"type": "json_object"}
     )
+
+    output = response.choices[0].message.content
     
-    return response.output_parsed
+    return output
 
 
 @eventbus.register("agent.thread", schema=AgentThreadInput)

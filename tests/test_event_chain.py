@@ -3,7 +3,7 @@
 import pytest
 import asyncio
 from unittest.mock import AsyncMock, MagicMock
-from modules.eventbus.event_chain import EventChainExecutor, EventChainBuilder, ChainEvent
+from modules.eventbus.event_chain import EventChainExecutor, EventChainBuilder, ChainEventSpec
 from modules.eventbus.event_bus import InMemoryEventBus, Event
 
 
@@ -276,7 +276,7 @@ class TestChainEvent:
 
     def test_chain_event_creation(self):
         """Test creating a ChainEvent"""
-        event = ChainEvent(
+        event = ChainEventSpec(
             event='tools.now',
             params={'test': True},
             decide='Should run?'
@@ -290,7 +290,7 @@ class TestChainEvent:
 
     def test_chain_event_with_result(self):
         """Test ChainEvent with result"""
-        event = ChainEvent(
+        event = ChainEventSpec(
             event='tools.now',
             result={'timestamp': '2025-01-15T10:30:00Z'}
         )
@@ -299,7 +299,7 @@ class TestChainEvent:
 
     def test_chain_event_with_error(self):
         """Test ChainEvent with error"""
-        event = ChainEvent(
+        event = ChainEventSpec(
             event='tools.now',
             error={'message': 'Failed', 'type': 'ValueError'}
         )

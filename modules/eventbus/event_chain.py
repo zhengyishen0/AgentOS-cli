@@ -17,28 +17,17 @@ from pydantic import BaseModel
 from .event_bus import Event, eventbus
 from .parameter_interpolator import ParameterInterpolator
 from ..providers.thread_manager import thread_manager
-
+from .event_schemas import ChainEventSpec
 
 logger = logging.getLogger(__name__)
 
-
-@dataclass
-class ChainEvent:
-    """Enhanced event for chain execution with result storage."""
-    event: str
-    params: Dict[str, Any] = field(default_factory=dict)
-    decide: Optional[str] = None
-    result: Optional[Any] = None
-    error: Optional[Dict[str, Any]] = None
-    timestamp: Optional[str] = None
-    execution_time_ms: Optional[float] = None
 
 
 @dataclass
 class EventChainResult:
     """Result of executing an event chain."""
     thread_id: str
-    events: List[ChainEvent]
+    events: List[ChainEventSpec]
     success: bool
     error: Optional[str] = None
     total_execution_time_ms: float = 0.0
@@ -75,7 +64,7 @@ class EventChainExecutor:
         # Create interpolator with context - it owns the context
         self._interpolator = ParameterInterpolator(thread_context)
         
-        executed_events: List[ChainEvent] = []
+        executed_events: List[ChainEventSpec] = []
         start_time = asyncio.get_event_loop().time()
         
         try:
@@ -116,12 +105,12 @@ class EventChainExecutor:
                 total_execution_time_ms=(asyncio.get_event_loop().time() - start_time) * 1000
             )
     
-    async def _execute_single(self, event_spec: Dict, thread_id: str) -> ChainEvent:
+    async def _execute_single(self, event_spec: Dict, thread_id: str) -> ChainEventSpec:
         """Execute a single event."""
         start_time = asyncio.get_event_loop().time()
         
         # Create ChainEvent
-        chain_event = ChainEvent(
+        chain_event = ChainEventSpec(
             event=event_spec['event'],
             params=event_spec.get('params', {}),
             decide=event_spec.get('decide', None),
@@ -135,7 +124,12 @@ class EventChainExecutor:
             
             # Handle conditional logic
             if chain_event.decide:
-                decision = await self._handle_decide(chain_event.decide, interpolated_params, event_schema)
+                decision = await self._handle_decide(
+                    thread_id=thread_id,
+                    prompt=chain_event.decide,
+                    params=interpolated_params,
+                    schema=event_schema
+                )
                 if decision['action'] == 'skip':
                     chain_event.result = {'skipped': True, 'reason': decision.get('reason')}
                     return chain_event
@@ -148,6 +142,7 @@ class EventChainExecutor:
             except Exception as e:
                 # Trigger agent.decide for parameter completion
                 completed_params = await self._complete_params(
+                    thread_id=thread_id,
                     params=interpolated_params,
                     schema=event_schema,
                     validation_error=str(e)
@@ -181,7 +176,7 @@ class EventChainExecutor:
         chain_event.execution_time_ms = (asyncio.get_event_loop().time() - start_time) * 1000
         return chain_event
     
-    async def _execute_parallel(self, events: List[Dict], thread_id: str) -> List[ChainEvent]:
+    async def _execute_parallel(self, events: List[Dict], thread_id: str) -> List[ChainEventSpec]:
         """Execute multiple events in parallel."""
         tasks = [self._execute_single(event, thread_id) for event in events]
         results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -190,7 +185,7 @@ class EventChainExecutor:
         for i, result in enumerate(results):
             if isinstance(result, Exception):
                 # Create error event
-                chain_event = ChainEvent(
+                chain_event = ChainEventSpec(
                     event=events[i]['event'],
                     params=events[i].get('params', {}),
                     error={'message': str(result), 'type': type(result).__name__},
@@ -215,7 +210,7 @@ class EventChainExecutor:
             
         return self._interpolator.interpolate(params)
     
-    async def _handle_decide(self, prompt: str, params: Dict[str, Any], schema: Type[BaseModel]) -> Dict[str, str]:
+    async def _handle_decide(self, thread_id: str, prompt: str, params: Dict[str, Any], schema: Type[BaseModel]) -> Dict[str, str]:
         """Handle conditional logic via agent.decide.
 
         Args:
@@ -233,6 +228,7 @@ class EventChainExecutor:
         decision = await self.event_bus.publish(
             event_type='agent.decide',
             data={
+                'thread_id': thread_id,
                 'prompt': prompt,
                 'params': params,
                 'schema': schema
@@ -244,7 +240,8 @@ class EventChainExecutor:
         self,
         params: Dict[str, Any],
         schema: Type[BaseModel],
-        validation_error: str
+        validation_error: str,
+        thread_id: str
     ) -> Dict[str, Any]:
         """Complete missing parameters via agent.decide.
         
@@ -260,6 +257,7 @@ class EventChainExecutor:
         decision = await self.event_bus.publish(
             event_type='agent.decide',
             data={
+                'thread_id': thread_id,
                 'prompt': "Correct the following parameters to match the schema. Current error: " + validation_error,
                 'params': params,
                 'schema': schema

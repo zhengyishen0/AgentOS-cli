@@ -28,6 +28,12 @@ class TaskListInput(BaseModel):
     filter: Dict[str, Any] = Field(default_factory=dict, description="Filter parameters")
     status: str = Field(default="all", description="Status filter: 'all', 'pending', 'completed', 'failed'")
 
+class AgentReplyInput(BaseModel):
+    """Input schema for agent.reply event."""
+    message: str = Field(description="Notification message")
+    level: str = Field(default="info", description="Notification level")
+    title: Optional[str] = Field(default=None, description="Optional notification title")
+
 
 # Agent Event Schemas
 class AgentChainInput(BaseModel):
@@ -43,9 +49,15 @@ class AgentThinkInput(BaseModel):
 
 class AgentDecideInput(BaseModel):
     """Input schema for agent.decide event."""
+    thread_id: str = Field(description="The thread context identifier")
     event_schema: Dict[str, Any] = Field(description="The schema of the event being evaluated")
     prompt: str = Field(description="The prompt for the decision")
     params: Dict[str, Any] = Field(default_factory=dict, description="The parameters to pass to the condition")
+
+class AgentThreadInput(BaseModel):
+    """Input schema for agent.thread event."""
+    input: str = Field(description="User input text to match against existing threads")
+    thread_data: Optional[List[str]] = Field(default=None, description="Optional thread data to match against")
 
 
 # Agent Output Schemas
@@ -54,7 +66,9 @@ class ChainEventSpec(BaseModel):
     event: str = Field(description="Event name to trigger")
     params: Dict[str, Any] = Field(default_factory=dict, description="Event parameters")
     decide: Optional[str] = Field(default=None, description="Optional condition for event execution")
-
+    timestamp: Optional[str] = Field(default=None, description="Optional timestamp for the event")
+    error: Optional[str] = Field(default=None, description="Optional error message for the event")
+    execution_time_ms: Optional[float] = Field(default=None, description="Optional execution time for the event")
 
 class AgentChainOutput(BaseModel):
     """Output schema for agent.chain event."""
@@ -76,13 +90,7 @@ class AgentDecideOutput(BaseModel):
     params: Dict[str, Any] = Field(description="The updated/completed parameters")
     reason: Optional[str] = Field(default=None, description="Reason for skipping (if action is skip)")
 
-    class Config:
-        extra = "forbid"  # Prevent additional properties
 
-class AgentThreadInput(BaseModel):
-    """Input schema for agent.thread event."""
-    input: str = Field(description="User input text to match against existing threads")
-    thread_data: Optional[List[str]] = Field(default=None, description="Optional thread data to match against")
 
 class AgentThreadOutput(BaseModel):
     """Output schema for agent.thread event. 
@@ -95,11 +103,6 @@ class AgentThreadOutput(BaseModel):
     }"""
     thread_confidence: Dict[str, float] = Field(description="Confidence level for each thread")
 
-class AgentReplyInput(BaseModel):
-    """Input schema for agent.reply event."""
-    message: str = Field(description="Notification message")
-    level: str = Field(default="info", description="Notification level")
-    title: Optional[str] = Field(default=None, description="Optional notification title")
 
 # Thread Event Schemas
 class ThreadMatchInput(BaseModel):
