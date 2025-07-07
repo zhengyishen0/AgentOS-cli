@@ -4,8 +4,9 @@ from datetime import datetime, timezone
 from typing import Dict, Any
 import uuid
 from ..eventbus.event_schemas import ThreadMatchInput, ThreadSummarizeInput, ThreadCreateInput, ThreadArchivedInput, AgentThreadOutput
-from ..eventbus.event_bus import Event, eventbus
-from modules import thread_manager
+from ..eventbus.event_bus import Event
+from modules import eventbus, thread_manager
+from modules.providers.thread_manager import ThreadEvent
 
 
 # TODO: might be better to merge this with agent.thread
@@ -18,14 +19,15 @@ async def thread_match(event: Event) -> Dict[str, Any]:
     input_data = ThreadMatchInput(**event.data)
     thread_data = await thread_manager.thread_summary()
     
-    thread_confidence = await eventbus.publish(
-        Event(
-            type="agent.thread",
-            data={"input": input_data.input, "thread_data": thread_data}
-        )
+    thread_model = await eventbus.publish(
+        "agent.thread",
+        {"input": input_data.input, "thread_data": thread_data}
     )
 
-    if thread_confidence[input_data.thread_id] > confidence_threshold:
+    # Access the thread_confidence attribute directly
+    thread_confidence = thread_model.thread_confidence
+    
+    if input_data.thread_id and thread_confidence.get(input_data.thread_id, 0) > confidence_threshold:
         # Continue in the existing thread
         thread_id = input_data.thread_id
     else:
@@ -33,10 +35,10 @@ async def thread_match(event: Event) -> Dict[str, Any]:
         max_confidence = 0
         best_thread_id = None
         
-        for thread_id, confidence in thread_confidence.items():
+        for _thread_id, confidence in thread_confidence.items():
             if confidence > max_confidence:
                 max_confidence = confidence
-                best_thread_id = thread_id
+                best_thread_id = _thread_id
         
         if best_thread_id and max_confidence > confidence_threshold:
             # Switch to the thread with highest confidence
@@ -46,13 +48,15 @@ async def thread_match(event: Event) -> Dict[str, Any]:
             new_thread = await thread_manager.create_thread(summary=f"New Thread")
             thread_id = new_thread.thread_id
     
-    event = Event(
-                type="agent.think",
-                data={"thread_id": thread_id, "prompt": input_data.input}
-            )
+    # Add event to thread
+    await thread_manager.add_event_to_thread(thread_id, ThreadEvent(
+        event="agent.think",
+        result={"thread_id": thread_id, "prompt": input_data.input},
+        timestamp=datetime.now(timezone.utc).isoformat()
+    ))
     
-    thread_manager.add_event_to_thread(thread_id, event)
-    eventbus.publish(event)
+    # Publish the event
+    await eventbus.publish("agent.think", {"thread_id": thread_id, "prompt": input_data.input})
 
 
 @eventbus.register("thread.summarize", schema=ThreadSummarizeInput)

@@ -124,23 +124,15 @@ class CLIProvider:
             logger.error(f"Failed to publish event {event_type}: {e}")
             return {"error": str(e)}
     
-    async def process_user_input(self, text: str) -> Dict[str, Any]:
+    async def publish_user_input(self, input: str) -> None:
         """Process user input through the event system.
         
         Args:
-            text: User input text
-            
-        Returns:
-            Processing result
+            input: User input text
         """
         # Publish user.input → thread.match → agent.think
-        result = await self.publish_event("thread.match", {"text": text})
-        
-        # If successful, continue with standard flow
-        if not result.get("error"):
-            return result
-        else:
-            return {"error": "Failed to process user input"}
+        await self.publish_event("thread.match", {"input": input})
+
 
     def parse_command(self, input_text: str) -> Optional[Dict[str, Any]]:
         """Parse user input to determine if it's a special command.
@@ -227,8 +219,7 @@ user.input → thread.match → agent.think
                     await self._handle_command(command)
                 else:
                     # Process as regular user input
-                    result = await self.process_user_input(user_input)
-                    self.display_result(result)
+                    await self.publish_user_input(user_input)
                     
             except KeyboardInterrupt:
                 self.display_output("\nGoodbye!", "info")

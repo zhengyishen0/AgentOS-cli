@@ -82,7 +82,7 @@ class AgentDecideOutput(BaseModel):
 class AgentThreadInput(BaseModel):
     """Input schema for agent.thread event."""
     input: str = Field(description="User input text to match against existing threads")
-    thread_data: Optional[Dict[str, Any]] = Field(default=None, description="Optional thread data to match against")
+    thread_data: Optional[List[str]] = Field(default=None, description="Optional thread data to match against")
 
 class AgentThreadOutput(BaseModel):
     """Output schema for agent.thread event. 

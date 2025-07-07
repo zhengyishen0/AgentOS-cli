@@ -59,7 +59,7 @@ class AgentOSRuntime:
         Returns:
             Processing result
         """
-        return await self.cli.process_user_input(text)
+        return await self.cli.publish_user_input(text)
     
     async def execute_custom_chain(self, chain: list, thread_id: str = "custom") -> Dict[str, Any]:
         """Execute a custom event chain.

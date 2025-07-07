@@ -2,7 +2,8 @@
 
 from typing import Dict, Any
 from ..eventbus.event_schemas import MemoryAppendInput, MemorySearchInput, MemoryDigestInput
-from ..eventbus.event_bus import Event, eventbus
+from ..eventbus.event_bus import Event
+from modules import eventbus
 
 
 @eventbus.register("memory.append", schema=MemoryAppendInput)

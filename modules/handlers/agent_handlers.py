@@ -1,5 +1,6 @@
 """Agent-related event handlers for AgentOS."""
 
+from datetime import datetime, timezone
 from openai import OpenAI
 
 from typing import Dict, Any
@@ -7,9 +8,12 @@ from ..eventbus.event_schemas import (
     AgentChainInput, AgentChainOutput, AgentThinkInput, AgentThinkOutput, 
     AgentDecideInput, AgentDecideOutput, AgentReplyInput, AgentThreadInput, AgentThreadOutput
 )
-from ..eventbus.event_bus import Event, eventbus
+from ..eventbus.event_bus import Event
 from ..eventbus.event_chain import EventChainExecutor
-from modules.providers.thread_manager import thread_manager
+from modules.providers.thread_manager import ThreadEvent
+from modules import eventbus, thread_manager
+
+
 
 
 client = OpenAI()
@@ -153,15 +157,17 @@ Keep plans focused and efficient. Use parallel execution where possible.
         text_format=AgentThinkOutput
     )
     
-    output = response.output_parsed
+    output = response.output_parsed.model_dump()
 
-    event = Event(
-        type=output.event,
-        data=output.params
-    )
-
-    thread_manager.add_event_to_thread(input_data.thread_id, event)
-    eventbus.publish(event)
+    # Add event to thread
+    await thread_manager.add_event_to_thread(input_data.thread_id, ThreadEvent(
+        event=output['event'],
+        result=output['params'],
+        timestamp=datetime.now(timezone.utc).isoformat()
+    ))
+    
+    # Publish the event
+    await eventbus.publish(output['event'], output['params'])
 
 
 @eventbus.register("agent.decide", schema=AgentDecideInput)

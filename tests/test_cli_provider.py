@@ -108,7 +108,7 @@ class TestCLIProvider:
             {"message": "Agent response"}  # agent.think result
         ]
         
-        result = await cli_provider.process_user_input("Hello")
+        result = await cli_provider.publish_user_input("Hello")
         
         # Verify events were published
         assert mock_event_bus.publish.call_count == 3

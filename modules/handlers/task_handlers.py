@@ -3,7 +3,8 @@
 from typing import Dict, Any
 import uuid
 from ..eventbus.event_schemas import TaskScheduleInput, TaskRegisterInput, TaskListInput
-from ..eventbus.event_bus import Event, eventbus
+from ..eventbus.event_bus import Event
+from modules import eventbus
 
 
 @eventbus.register("task.schedule", schema=TaskScheduleInput)
