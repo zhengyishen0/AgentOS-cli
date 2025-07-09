@@ -234,7 +234,11 @@ class ConcurrentEventBus():
     
     def get_schema(self, event_type: str) -> Optional[dict]:
         """Get json schema for an event type."""
-        return self._schemas.get(event_type).model_json_schema()
+        try:
+            return self._schemas.get(event_type).model_json_schema()
+        except Exception as e:
+            logger.error(f"Error getting schema for {event_type}: {e}")
+            return None
     
     def list_schemas(self, brief: bool = False) -> dict[str, dict]:
         """List all event schemas."""
@@ -246,6 +250,4 @@ class ConcurrentEventBus():
     def has_handler(self, event_type: str) -> bool:
         """Check if handlers exist for an event type."""
         return event_type in self._handlers and len(self._handlers[event_type]) > 0
-    
-# Global event bus instance (no persistence by default)
-eventbus = ConcurrentEventBus()
+

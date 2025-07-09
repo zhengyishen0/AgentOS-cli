@@ -13,11 +13,11 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Union, Type
 from datetime import datetime, timezone
 from pydantic import BaseModel
-
-from .event_bus import Event, eventbus
-from .parameter_interpolator import ParameterInterpolator
-from ..providers.thread_manager import thread_manager
+from pprint import pprint
+from .event_bus import Event
 from .event_schemas import ChainEventSpec
+from .parameter_interpolator import ParameterInterpolator
+
 
 logger = logging.getLogger(__name__)
 
@@ -36,8 +36,8 @@ class EventChainResult:
 class EventChainExecutor:
     """Executes event chains with parameter interpolation and result propagation."""
     
-    def __init__(self):
-        self.event_bus = eventbus
+    def __init__(self, event_bus=None, thread_manager=None):
+        self.event_bus = event_bus
         self.thread_manager = thread_manager
         self._interpolator: Optional[ParameterInterpolator] = None
         
@@ -55,6 +55,7 @@ class EventChainExecutor:
             EventChainResult with all execution details
         """
         # Load thread context if available
+
         thread_context = {}
         if self.thread_manager:
             thread = await self.thread_manager.get_thread(thread_id)
@@ -120,8 +121,12 @@ class EventChainExecutor:
         try:
             # Interpolate parameters
             interpolated_params = await self._interpolate_params(chain_event.params)
-            event_schema = eventbus.get_schema(chain_event.event)
-            
+            try:
+                event_schema = self.event_bus.get_schema(chain_event.event)
+            except Exception as e:
+                print(f"Error getting schema for {chain_event.event}: {e}")
+                event_schema = None
+        
             # Handle conditional logic
             if chain_event.decide:
                 decision = await self._handle_decide(
@@ -158,7 +163,7 @@ class EventChainExecutor:
                     '_chain_execution': True
                 }
             )
-            
+
             # Wait for event result (this needs enhancement in event_bus.py)
             result = await self._publish_and_wait(event)
             chain_event.result = result
@@ -231,7 +236,7 @@ class EventChainExecutor:
                 'thread_id': thread_id,
                 'prompt': prompt,
                 'params': params,
-                'schema': schema
+                'event_schema': schema
             }
         )   
         return decision
@@ -260,7 +265,7 @@ class EventChainExecutor:
                 'thread_id': thread_id,
                 'prompt': "Correct the following parameters to match the schema. Current error: " + validation_error,
                 'params': params,
-                'schema': schema
+                'event_schema': schema
             }
         )   
 

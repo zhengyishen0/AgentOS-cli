@@ -8,7 +8,7 @@ import asyncio
 import logging
 from typing import Dict, Any, Optional, List
 from datetime import datetime, timezone
-from ..eventbus.event_bus import eventbus
+from modules import eventbus
 
 logger = logging.getLogger(__name__)
 

@@ -56,10 +56,10 @@ class AgentReplyInput(BaseModel):
     The reply can include different levels of urgency and optional titles for better UX.
     
     Expected behavior: Delivers a message to the user interface with appropriate
-    styling based on the notification level (info, warning, error, etc.).
+    styling based on the notification level (agent,info, warning, error, etc.).
     """
     message: str = Field(description="Notification message")
-    level: str = Field(default="info", description="Notification level")
+    level: str = Field(default="agent", description="Notification level")
     title: Optional[str] = Field(default=None, description="Optional notification title")
 
 
@@ -76,6 +76,7 @@ class AgentChainInput(BaseModel):
     where appropriate.
     """
     message: str = Field(description="The pseudocode plan to convert into an event chain")
+    thread_id: str = Field(description="The thread context identifier")
 
 
 class AgentThinkInput(BaseModel):
@@ -131,7 +132,8 @@ class ChainEventSpec(BaseModel):
     params: Dict[str, Any] = Field(default_factory=dict, description="Event parameters")
     decide: Optional[str] = Field(default=None, description="Optional condition for event execution")
     timestamp: Optional[str] = Field(default=None, description="Optional timestamp for the event")
-    error: Optional[str] = Field(default=None, description="Optional error message for the event")
+    error: Optional[Dict[str, Any]] = Field(default=None, description="Optional error message for the event")
+    result: Optional[Dict[str, Any]] = Field(default=None, description="Event execution result")
     execution_time_ms: Optional[float] = Field(default=None, description="Optional execution time for the event")
 
     class Config:
@@ -144,15 +146,10 @@ class AgentChainOutput(BaseModel):
     class Config:
         extra = "forbid"  # Prevent additional properties
 
-class AgentThinkParams(BaseModel):
-    """Parameters for the agent.think event."""
-    message: str = Field(description="The message to think about")
-
 class AgentThinkOutput(BaseModel):
     """Output schema for agent.think event."""
     event: Literal["agent.reply", "agent.chain"] = Field(description="Next event to trigger")
-    params: AgentThinkParams = Field(description="Parameters for the next event")
-
+    message: str = Field(description="The message to think about")
 
 class AgentDecideOutput(BaseModel):
     """Output schema for agent.decide event."""
@@ -162,8 +159,6 @@ class AgentDecideOutput(BaseModel):
 
     class Config:
         extra = "forbid"  # Prevent additional properties
-
-
 
 class AgentThreadOutput(BaseModel):
     """Output schema for agent.thread event. 

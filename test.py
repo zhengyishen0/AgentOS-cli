@@ -47,9 +47,27 @@ new_think_event = Event(
     },
 )
 
+new_chain_prompt = """
+1. call agent.think with the prompt: "you are a helpful assistant"
+2. call agent.chain with the prompt: "tell a joke'"
+3. call agent.think with the prompt: "do you like apple or orange?"
+"""
+
+new_chain_event = Event(
+    type="agent.chain",
+    data={
+        "thread_id": "thread_20250705_164835_149647",
+        "message": new_chain_prompt,
+    },
+)
+
 # Run tests
 # asyncio.run(agent_chain(event_chain))
 # asyncio.run(agent_think(event_think))
-asyncio.run(agent_think(new_think_event))
+# asyncio.run(agent_think(new_think_event))
+# asyncio.run(agent_chain(new_chain_event))
+
 
 # pprint(eventbus.list_schemas(brief=True))
+
+print(eventbus.get_schema("agent.think"))

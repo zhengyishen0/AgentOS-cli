@@ -13,7 +13,7 @@ from .eventbus.event_chain import EventChainExecutor
 eventbus = ConcurrentEventBus()
 cli_provider = CLIProvider(eventbus)
 thread_manager = ThreadManager()
-executor = EventChainExecutor()
+executor = EventChainExecutor(eventbus, thread_manager)
 
 # Export them for easy access
 __all__ = ['eventbus', 'cli_provider', 'thread_manager', 'executor']

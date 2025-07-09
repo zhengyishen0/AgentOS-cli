@@ -1,5 +1,6 @@
 """Agent-related event handlers for AgentOS."""
 
+import logging
 from datetime import datetime, timezone
 from openai import OpenAI
 import json
@@ -9,11 +10,11 @@ from ..eventbus.event_schemas import (
     AgentDecideInput, AgentDecideOutput, AgentReplyInput, AgentThreadInput, AgentThreadOutput
 )
 from ..eventbus.event_bus import Event
-from ..eventbus.event_chain import EventChainExecutor
 from modules.providers.thread_manager import ThreadEvent
-from modules import eventbus, thread_manager
+from modules import eventbus, thread_manager, executor
 from pprint import pprint
 
+logger = logging.getLogger(__name__)
 client = OpenAI()
 
 
@@ -75,17 +76,21 @@ Keep plans focused and efficient. Use parallel execution where possible.
     )
     
     output = response.output_parsed.model_dump()
-    pprint(output)
+    # pprint(output)
 
     # Add event to thread
     await thread_manager.add_event_to_thread(input_data.thread_id, ThreadEvent(
         event=output['event'],
-        result=output['params'],
+        result=output['message'],
         timestamp=datetime.now(timezone.utc).isoformat()
     ))
+
+    data = {
+        "thread_id": input_data.thread_id,
+        "message": output['message']
+    }
     
-    # Publish the event
-    await eventbus.publish(output['event'], output['params'])
+    await eventbus.publish(output['event'], data)
 
 
 @eventbus.register("agent.chain", schema=AgentChainInput)
@@ -95,13 +100,6 @@ async def agent_chain(event: Event) -> Dict[str, Any]:
     This handler mechanically translates pseudocode plans into executable event chains.
     It has full knowledge of available events and their schemas but performs no
     complex reasoning - just pattern matching and translation.
-    
-    Args:
-        event: Event containing:
-            - message: The pseudocode plan to convert into an event chain
-        
-    Returns:
-        AgentChainOutput as dict with chain of events to execute
     """
 
     # Validate input data
@@ -177,10 +175,10 @@ Example json format output:
     raw_data = response.choices[0].message.content
     data = json.loads(raw_data)
 
-    pprint(data)
+    # pprint(data.get('chain', []))
+
     
-    # Create executor and execute the chain
-    executor = EventChainExecutor()
+    # Execute the chain
     execution_result = await executor.execute_chain(
         chain=data.get('chain', []),
         thread_id=input_data.thread_id
@@ -269,7 +267,19 @@ TASK: {input_data.prompt}
 
     output = response.choices[0].message.content
     
-    return output
+    # Parse the JSON response
+    try:
+        parsed_output = json.loads(output)
+        return parsed_output
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse agent.decide response as JSON: {e}")
+        logger.error(f"Raw response: {output}")
+        # Return a safe fallback
+        return {
+            "action": "continue",
+            "params": input_data.params,
+            "reason": "Failed to parse decision response"
+        }
 
 
 @eventbus.register("agent.thread", schema=AgentThreadInput)
