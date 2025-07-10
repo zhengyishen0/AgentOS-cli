@@ -88,22 +88,54 @@ class EventStorage:
             async with self._lock:
                 partition_file = self._get_partition_path(timestamp)
                 
-                def _append_event():
+                def _save_event():
                     # Ensure parent directory exists
                     partition_file.parent.mkdir(parents=True, exist_ok=True)
                     
-                    # Append event as JSON line
+                    # Check if event_id is provided and file exists
+                    event_id = event_record.get("event_id")
+                    if event_id and partition_file.exists():
+                        # Read existing events and look for matching event_id
+                        events = []
+                        updated = False
+                        
+                        with open(partition_file, 'r', encoding='utf-8') as f:
+                            for line in f:
+                                line = line.strip()
+                                if not line:
+                                    continue
+                                try:
+                                    existing_event = json.loads(line)
+                                    if existing_event.get("event_id") == event_id:
+                                        # Update the existing event
+                                        events.append(event_record)
+                                        updated = True
+                                        logger.debug(f"Updated existing event {event_id}")
+                                    else:
+                                        events.append(existing_event)
+                                except json.JSONDecodeError:
+                                    logger.warning(f"Skipping invalid JSON line in {partition_file}")
+                                    continue
+                        
+                        if updated:
+                            # Write back all events with the updated one
+                            with open(partition_file, 'w', encoding='utf-8') as f:
+                                for event in events:
+                                    f.write(json.dumps(event, ensure_ascii=False) + '\n')
+                            return
+                    
+                    # If no event_id or no existing event found, append the new event
                     with open(partition_file, 'a', encoding='utf-8') as f:
                         f.write(json.dumps(event_record, ensure_ascii=False) + '\n')
                 
                 loop = asyncio.get_event_loop()
-                await loop.run_in_executor(None, _append_event)
+                await loop.run_in_executor(None, _save_event)
                 
-                logger.debug(f"Saved event {event_record.get('type', 'unknown')} to {partition_file}")
+                logger.debug(f"Saved event {event_record.get('name', 'unknown')} to {partition_file}")
                 return True
                 
         except Exception as e:
-            logger.error(f"Failed to save event {event_record.get('type', 'unknown')}: {e}")
+            logger.error(f"Failed to save event {event_record.get('name', 'unknown')}: {e}")
             return False
     
     async def load_events_from_date(self, date_str: str) -> List[Dict[str, Any]]:

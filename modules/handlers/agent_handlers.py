@@ -1,7 +1,6 @@
 """Agent-related event handlers for AgentOS."""
 
 import logging
-from datetime import datetime, timezone
 from openai import OpenAI
 import json
 from typing import Dict, Any
@@ -78,22 +77,14 @@ Keep plans focused and efficient. Use parallel execution where possible.
     print('agent.think output:')
     pprint(output)
 
-    # Add event to thread
-    think_event = Event(
-        name=output['event'],
-        data={"input": input_data.prompt},
-        result={"message": output['message']},
-        status="completed",
-        source="agent.think"
-    )
-    await thread_manager.add_event_to_thread(input_data.thread_id, think_event)
-
     data = {
         "thread_id": input_data.thread_id,
         "message": output['message']
     }
     
     await eventbus.publish(output['event'], data)
+
+    return output
 
 
 @eventbus.register("agent.chain", schema=AgentChainInput)
@@ -182,27 +173,11 @@ Example json format output:
 
     data = response.choices[0].message.content
     chain = json.loads(data).get('chain', [])
-    
-    print('agent.chain output:')
-    pprint(chain)
-
-    # Convert chain to proper Event objects, handling nested lists for parallel execution
-    def convert_chain_to_events(chain_items):
-        """Recursively convert chain items to Event objects, preserving nested list structure."""
-        converted_chain = []
-        for item in chain_items:
-            if isinstance(item, list):
-                # This is a parallel execution group - convert each item in the sublist
-                parallel_events = [Event(**event) for event in item]
-                converted_chain.append(parallel_events)
-            else:
-                # This is a single event
-                converted_chain.append(Event(**item))
-        return converted_chain
-
     chain_events = convert_chain_to_events(chain)
 
-    
+    print('agent.chain output:')
+    pprint(chain_events)
+
     # Execute the chain
     execution_result = await executor.execute_chain(
         chain=chain_events,
@@ -331,3 +306,19 @@ async def agent_reply(event: Event) -> None:
     """Send a reply to the user"""
     input_data = AgentReplyInput(**event.data)
     cli_provider.display_output(input_data.message, "agent")
+
+
+
+# Convert chain to proper Event objects, handling nested lists for parallel execution
+def convert_chain_to_events(chain_items):
+    """Recursively convert chain items to Event objects, preserving nested list structure."""
+    converted_chain = []
+    for item in chain_items:
+        if isinstance(item, list):
+            # This is a parallel execution group - convert each item in the sublist
+            parallel_events = [Event(**event) for event in item]
+            converted_chain.append(parallel_events)
+        else:
+            # This is a single event
+            converted_chain.append(Event(**item))
+    return converted_chain
