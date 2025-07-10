@@ -126,39 +126,11 @@ class AgentThreadInput(BaseModel):
 
 
 # Agent Output Schemas
-class ChainEventSpec(BaseModel):
-    """Specification for a single event in a chain."""
-    event: str = Field(description="Event name to trigger")
-    params: Dict[str, Any] = Field(default_factory=dict, description="Event parameters")
-    decide: Optional[str] = Field(default=None, description="Optional condition for event execution")
-    timestamp: Optional[str] = Field(default=None, description="Optional timestamp for the event")
-    error: Optional[Dict[str, Any]] = Field(default=None, description="Optional error message for the event")
-    result: Optional[Dict[str, Any]] = Field(default=None, description="Event execution result")
-    execution_time_ms: Optional[float] = Field(default=None, description="Optional execution time for the event")
-
-    class Config:
-        extra = "forbid"  # Prevent additional properties
-
-class AgentChainOutput(BaseModel):
-    """Output schema for agent.chain event."""
-    chain: List[Union[ChainEventSpec, List[ChainEventSpec]]] = Field(description="List of events to execute (nested lists indicate parallel execution)")
-
-    class Config:
-        extra = "forbid"  # Prevent additional properties
-
 class AgentThinkOutput(BaseModel):
     """Output schema for agent.think event."""
     event: Literal["agent.reply", "agent.chain"] = Field(description="Next event to trigger")
     message: str = Field(description="The message to think about")
 
-class AgentDecideOutput(BaseModel):
-    """Output schema for agent.decide event."""
-    action: Literal["continue", "skip"] = Field(description="Whether to continue or skip the event")
-    params: Dict[str, Any] = Field(description="The updated/completed parameters")
-    reason: Optional[str] = Field(default=None, description="Reason for skipping (if action is skip)")
-
-    class Config:
-        extra = "forbid"  # Prevent additional properties
 
 class AgentThreadOutput(BaseModel):
     """Output schema for agent.thread event. 

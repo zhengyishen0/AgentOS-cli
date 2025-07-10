@@ -5,12 +5,11 @@ from datetime import datetime, timezone
 from openai import OpenAI
 import json
 from typing import Dict, Any
+from ..eventbus.models import Event
 from ..eventbus.event_schemas import (
-    AgentChainInput, AgentChainOutput, AgentThinkInput, AgentThinkOutput, 
-    AgentDecideInput, AgentDecideOutput, AgentReplyInput, AgentThreadInput, AgentThreadOutput
+    AgentChainInput, AgentThinkInput, AgentThinkOutput, 
+    AgentDecideInput, AgentReplyInput, AgentThreadInput, AgentThreadOutput
 )
-from ..eventbus.event_bus import Event
-from modules.providers.thread_manager import ThreadEvent
 from modules import eventbus, thread_manager, executor
 from pprint import pprint
 
@@ -76,14 +75,18 @@ Keep plans focused and efficient. Use parallel execution where possible.
     )
     
     output = response.output_parsed.model_dump()
-    # pprint(output)
+    print('agent.think output:')
+    pprint(output)
 
     # Add event to thread
-    await thread_manager.add_event_to_thread(input_data.thread_id, ThreadEvent(
-        event=output['event'],
-        result=output['message'],
-        timestamp=datetime.now(timezone.utc).isoformat()
-    ))
+    think_event = Event(
+        type=output['event'],
+        data={"message": output['message']},
+        result={"message": output['message']},
+        status="completed",
+        source="agent.think"
+    )
+    await thread_manager.add_event_to_thread(input_data.thread_id, think_event)
 
     data = {
         "thread_id": input_data.thread_id,
@@ -175,7 +178,8 @@ Example json format output:
     raw_data = response.choices[0].message.content
     data = json.loads(raw_data)
 
-    # pprint(data.get('chain', []))
+    print('agent.chain output:')
+    pprint(data.get('chain', []))
 
     
     # Execute the chain
@@ -187,7 +191,7 @@ Example json format output:
     # Return the execution result
     return {
         'success': execution_result.success,
-        'events': [e.__dict__ for e in execution_result.events],
+        'events': [e.model_dump() for e in execution_result.events],
         'total_execution_time_ms': execution_result.total_execution_time_ms,
         'error': execution_result.error,
         'chain_definition': data.get('chain', [])  # Include original chain for reference

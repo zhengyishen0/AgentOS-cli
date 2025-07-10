@@ -35,7 +35,9 @@ event_chain = Event(
 )
 
 new_think_prompt = """
-you will create a fake convesation, starting with a ramdom word. Then you will pass the a word to the next one and ask it to extend with another word, and so on.
+you will create a series of convesation with agent.think, ask the first agent.think to come up with a ramdom word and pass it to the next one.
+The agent.think will get the word from the previous agent.think and extend one more word after it, and then pass the a word to the next one.
+The convesation continues to the third agent.think and do the same.
 the last agent will be ask to repeat the whole conversation without been told the previous conversation.
 """
 
@@ -64,10 +66,10 @@ new_chain_event = Event(
 # Run tests
 # asyncio.run(agent_chain(event_chain))
 # asyncio.run(agent_think(event_think))
-# asyncio.run(agent_think(new_think_event))
+asyncio.run(agent_think(new_think_event))
 # asyncio.run(agent_chain(new_chain_event))
 
 
 # pprint(eventbus.list_schemas(brief=True))
 
-print(eventbus.get_schema("agent.think"))
+# print(eventbus.get_schema("agent.think"))

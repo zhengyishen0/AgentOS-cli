@@ -7,34 +7,14 @@ import asyncio
 import logging
 from collections import defaultdict
 from collections.abc import Callable
-from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Optional, Type
 from pydantic import BaseModel, ValidationError
 
 from modules.persistence import EventStorage
+from .models import Event
 
 logger = logging.getLogger(__name__)
-
-
-
-@dataclass
-class Event:
-    """Represents an event in the system."""
-
-    type: str
-    data: dict[str, Any]
-    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    source: str = "system"
-
-    def to_dict(self) -> dict[str, Any]:
-        """Convert event to dictionary representation."""
-        return {
-            "type": self.type,
-            "data": self.data,
-            "timestamp": self.timestamp.isoformat(),
-            "source": self.source,
-        }
 
 
 class ConcurrentEventBus():
@@ -133,9 +113,9 @@ class ConcurrentEventBus():
         if len(self._event_history) > self._max_history_size:
             self._event_history.pop(0)
             
-        # Persist event to storage if configured
+        # Persist initial event to storage if configured
         if self._storage:
-            await self._storage.save_event(event)
+            await self._storage.save_event(event.model_dump())
 
         # Log event
         logger.info(f"Publishing event: {event_type} from {source}")
@@ -145,6 +125,7 @@ class ConcurrentEventBus():
 
         # Execute handlers concurrently and collect results
         handler_results = {}
+        start_time = asyncio.get_event_loop().time()
         
         if handlers:
             tasks = []
@@ -168,6 +149,33 @@ class ConcurrentEventBus():
                     handler_results[handler_name] = {"error": str(result)}
                 else:
                     handler_results[handler_name] = result
+
+        # Update event with completion info
+        event.completed_at = datetime.now(timezone.utc)
+        event.execution_time_ms = (asyncio.get_event_loop().time() - start_time) * 1000
+        
+        # Determine final result and status
+        if len(handler_results) == 0:
+            event.result = {}
+            event.status = "completed"
+        elif len(handler_results) == 1:
+            result = next(iter(handler_results.values()))
+            if isinstance(result, dict) and "error" in result:
+                event.status = "failed"
+                event.error = result["error"]
+                event.result = result
+            else:
+                event.status = "completed"
+                event.result = result
+        else:
+            # Check if any handler failed
+            has_errors = any(isinstance(r, dict) and "error" in r for r in handler_results.values())
+            event.status = "failed" if has_errors else "completed"
+            event.result = handler_results
+
+        # Persist completed event to storage if configured
+        if self._storage:
+            await self._storage.save_event(event.model_dump())
 
         # Return results based on number of handlers
         if len(handler_results) == 0:

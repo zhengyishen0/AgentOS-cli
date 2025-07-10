@@ -131,7 +131,8 @@ class CLIProvider:
             input: User input text
         """
         # Publish user.input → thread.match → agent.think
-        await self.publish_event("thread.match", {"input": input})
+        data = {"input": input}
+        await self.publish_event("thread.match", data)
 
 
     def parse_command(self, input_text: str) -> Optional[Dict[str, Any]]:

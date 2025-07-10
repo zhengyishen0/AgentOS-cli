@@ -50,31 +50,26 @@ class EventStorage:
         else:
             return self.storage_path / "events.jsonl"
     
-    async def save_event(self, 
-                        type: str, 
-                        data: Dict[str, Any], 
-                        source: str = "system",
-                        timestamp: Optional[datetime] = None) -> bool:
+    async def save_event(self, event_data: Dict[str, Any]) -> bool:
         """Save an event.
         
         Args:
-            type: Type of event (e.g., "user.login")
-            data: Event data payload
-            source: Source of the event
-            timestamp: Event timestamp (defaults to now)
+            event_data: Complete event dictionary with all fields
             
         Returns:
             True if successful
         """
-        if timestamp is None:
+        # Extract timestamp for partitioning
+        timestamp_str = event_data.get("timestamp")
+        if timestamp_str:
+            try:
+                timestamp = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+            except ValueError:
+                timestamp = datetime.now()
+        else:
             timestamp = datetime.now()
         
-        event_record = {
-            "type": type,
-            "data": data,
-            "timestamp": timestamp.isoformat(),
-            "source": source
-        }
+        event_record = event_data
         
         try:
             async with self._lock:
@@ -91,11 +86,11 @@ class EventStorage:
                 loop = asyncio.get_event_loop()
                 await loop.run_in_executor(None, _append_event)
                 
-                logger.debug(f"Saved event {type} to {partition_file}")
+                logger.debug(f"Saved event {event_record.get('type', 'unknown')} to {partition_file}")
                 return True
                 
         except Exception as e:
-            logger.error(f"Failed to save event {type}: {e}")
+            logger.error(f"Failed to save event {event_record.get('type', 'unknown')}: {e}")
             return False
     
     async def load_events_from_date(self, date_str: str) -> List[Dict[str, Any]]:

@@ -6,7 +6,7 @@ import uuid
 from ..eventbus.event_schemas import ThreadMatchInput, ThreadSummarizeInput, ThreadCreateInput, ThreadArchivedInput, AgentThreadOutput
 from ..eventbus.event_bus import Event
 from modules import eventbus, thread_manager
-from modules.providers.thread_manager import ThreadEvent
+from modules.eventbus.models import Event
 
 
 # TODO: might be better to merge this with agent.thread
@@ -49,10 +49,12 @@ async def thread_match(event: Event) -> Dict[str, Any]:
             thread_id = new_thread.thread_id
     
     # Add event to thread
-    await thread_manager.add_event_to_thread(thread_id, ThreadEvent(
-        event="agent.think",
+    await thread_manager.add_event_to_thread(thread_id, Event(
+        type="agent.think",
+        data={"thread_id": thread_id, "prompt": input_data.input},
         result={"thread_id": thread_id, "prompt": input_data.input},
-        timestamp=datetime.now(timezone.utc).isoformat()
+        status="completed",
+        source="thread_handler"
     ))
     
     # Publish the event
