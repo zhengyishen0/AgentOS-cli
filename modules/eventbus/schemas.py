@@ -132,6 +132,22 @@ class AgentThinkOutput(BaseModel):
     message: str = Field(description="The message to think about")
 
 
+class ChainEvent(BaseModel):
+    """Output schema for agent.chain event."""
+    name: str = Field(description="Event name")
+    data: Dict[str, Any] = Field(description="Event data")
+
+    class Config:
+        extra = "forbid"  # Prevent additional properties
+
+class AgentChainOutput(BaseModel):
+    """Output schema for agent.chain event."""
+    data: List[Union[ChainEvent, List[ChainEvent]]] = Field(description="The chain of events to execute")
+
+    class Config:
+        extra = "forbid"  # Prevent additional properties
+    
+
 class AgentThreadOutput(BaseModel):
     """Output schema for agent.thread event. 
     Example:

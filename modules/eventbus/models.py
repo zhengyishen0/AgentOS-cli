@@ -64,8 +64,8 @@ class Thread(BaseModel):
         
         # Add recent event results to context
         for event in self.events[-10:]:  # Last 10 events for efficiency
-            if '.' in event.type and event.result:
-                parts = event.type.split('.')
+            if '.' in event.name and event.result:
+                parts = event.name.split('.')
                 current = context
                 for part in parts[:-1]:
                     if part not in current:

@@ -165,8 +165,8 @@ class EventChainExecutor:
             if isinstance(result, Exception):
                 # Create error event
                 chain_event = Event(
-                    name=events[i]['event'],
-                    data=events[i].get('params', {}),
+                    name=events[i].name,
+                    data=events[i].data,
                     error=str(result),
                     status="failed",
                     source="chain"
@@ -206,7 +206,7 @@ class EventChainExecutor:
         """
         # Placeholder - will integrate with agent.decide
         decision = await self.event_bus.publish(
-            event_type='agent.decide',
+            name='agent.decide',
             data={
                 'thread_id': thread_id,
                 'prompt': prompt,
@@ -235,7 +235,7 @@ class EventChainExecutor:
         """
 
         decision = await self.event_bus.publish(
-            event_type='agent.decide',
+            name='agent.decide',
             data={
                 'thread_id': thread_id,
                 'prompt': "Correct the following parameters to match the schema. Current error: " + validation_error,
@@ -259,7 +259,7 @@ class EventChainExecutor:
         If there are multiple handlers, we'll return the full dict.
         """
         result = await self.event_bus.publish(
-            event_type=event.name,
+            name=event.name,
             data=event.data,
             source=event.source
         )

@@ -16,12 +16,12 @@ class TestEventChainExecutor:
         mock_bus = AsyncMock(spec=InMemoryEventBus)
         
         # Default mock responses
-        async def mock_publish(event_type, data, source=None):
-            if event_type == 'tools.now':
+        async def mock_publish(name, data, source=None):
+            if name == 'tools.now':
                 return {'timestamp': '2025-01-15T10:30:00Z'}
-            elif event_type == 'user.create':
+            elif name == 'user.create':
                 return {'user_id': 'user_123', 'status': 'created'}
-            elif event_type == 'agent.decide':
+            elif name == 'agent.decide':
                 if 'Correct the following parameters' in data.get('prompt', ''):
                     return {'params': {**data['params'], 'fixed': True}}
                 else:
@@ -98,8 +98,8 @@ class TestEventChainExecutor:
     async def test_conditional_event_skip(self, executor, mock_event_bus):
         """Test conditional event that skips"""
         # Mock decide to return skip
-        async def mock_decide(event_type, data, source=None):
-            if event_type == 'agent.decide':
+        async def mock_decide(name, data, source=None):
+            if name == 'agent.decide':
                 return {'action': 'skip', 'reason': 'User not needed'}
             return {'status': 'completed'}
         
@@ -121,8 +121,8 @@ class TestEventChainExecutor:
         from modules.eventbus import event_registry
         original_validate = event_registry.validate_event_data
         
-        def mock_validate(event_type, data):
-            if event_type == 'user.create' and 'email' not in data:
+        def mock_validate(name, data):
+            if name == 'user.create' and 'email' not in data:
                 raise ValueError("Missing required field: email")
         
         event_registry.validate_event_data = mock_validate
@@ -144,8 +144,8 @@ class TestEventChainExecutor:
     async def test_chain_with_error(self, executor, mock_event_bus):
         """Test chain execution with error"""
         # Mock to raise error
-        async def mock_error(event_type, data, source=None):
-            if event_type == 'user.create':
+        async def mock_error(name, data, source=None):
+            if name == 'user.create':
                 raise ValueError("User creation failed")
             return {'status': 'completed'}
         

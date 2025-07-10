@@ -105,11 +105,11 @@ class CLIProvider:
                 else:
                     self.display_output(f"📊 {event.event}: {event.result}")
     
-    async def publish_event(self, event_type: str, data: Dict[str, Any], source: str = "cli") -> Dict[str, Any]:
+    async def publish_event(self, name: str, data: Dict[str, Any], source: str = "cli") -> Dict[str, Any]:
         """Publish an event to the event bus.
         
         Args:
-            event_type: Type of event to publish
+            name: Name of event to publish
             data: Event data
             source: Source of the event
             
@@ -117,11 +117,11 @@ class CLIProvider:
             Event handler results
         """
         try:
-            result = await self.event_bus.publish(event_type, data, source)
-            logger.debug(f"Published event {event_type}: {result}")
+            result = await self.event_bus.publish(name, data, source)
+            logger.debug(f"Published event {name}: {result}")
             return result
         except Exception as e:
-            logger.error(f"Failed to publish event {event_type}: {e}")
+            logger.error(f"Failed to publish event {name}: {e}")
             return {"error": str(e)}
     
     async def publish_user_input(self, input: str) -> None:
@@ -292,7 +292,7 @@ user.input → thread.match → agent.think
         
         for i, event in enumerate(history[-10:]):  # Show last 10 events
             timestamp = getattr(event, 'timestamp', 'Unknown')
-            event_type = getattr(event, 'type', 'Unknown')
+            name = getattr(event, 'name', 'Unknown')
             source = getattr(event, 'source', 'Unknown')
-            self.display_output(f"  {i+1}. [{timestamp}] {event_type} (from {source})", "debug")
+            self.display_output(f"  {i+1}. [{timestamp}] {name} (from {source})", "debug")
 

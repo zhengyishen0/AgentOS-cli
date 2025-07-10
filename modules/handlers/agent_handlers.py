@@ -7,7 +7,7 @@ import json
 from typing import Dict, Any
 from modules.eventbus.models import Event
 from modules.eventbus.schemas import (
-    AgentChainInput, AgentThinkInput, AgentThinkOutput, 
+    AgentChainInput, AgentChainOutput, AgentThinkInput, AgentThinkOutput, 
     AgentDecideInput, AgentReplyInput, AgentThreadInput, AgentThreadOutput
 )
 from modules import eventbus, thread_manager, executor, cli_provider
@@ -172,24 +172,40 @@ Example json format output:
 """
 
     response = client.chat.completions.create(
-        model="gpt-4o-mini",
+        model="gpt-4.1-nano",
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": f"PLAN: {input_data.message}"}
         ],
         response_format={"type": "json_object"}
     )
-    
-    raw_data = response.choices[0].message.content
-    data = json.loads(raw_data)
 
+    data = response.choices[0].message.content
+    chain = json.loads(data).get('chain', [])
+    
     print('agent.chain output:')
-    pprint(data.get('chain', []))
+    pprint(chain)
+
+    # Convert chain to proper Event objects, handling nested lists for parallel execution
+    def convert_chain_to_events(chain_items):
+        """Recursively convert chain items to Event objects, preserving nested list structure."""
+        converted_chain = []
+        for item in chain_items:
+            if isinstance(item, list):
+                # This is a parallel execution group - convert each item in the sublist
+                parallel_events = [Event(**event) for event in item]
+                converted_chain.append(parallel_events)
+            else:
+                # This is a single event
+                converted_chain.append(Event(**item))
+        return converted_chain
+
+    chain_events = convert_chain_to_events(chain)
 
     
     # Execute the chain
     execution_result = await executor.execute_chain(
-        chain=data.get('chain', []),
+        chain=chain_events,
         thread_id=input_data.thread_id
     )
     
@@ -199,7 +215,7 @@ Example json format output:
         'events': [e.model_dump() for e in execution_result.events],
         'total_execution_time_ms': execution_result.total_execution_time_ms,
         'error': execution_result.error,
-        'chain_definition': data.get('chain', [])  # Include original chain for reference
+        'chain_definition': chain  # Include original chain for reference
     }
 
 

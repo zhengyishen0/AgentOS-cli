@@ -103,7 +103,7 @@ result = await eventbus.publish("task.schedule", {
 
 ```python
 result = await eventbus.publish(
-    event_type="user.action",
+    name="user.action",
     data={"action": "login", "user_id": "123"},
     source="auth_service"
 )

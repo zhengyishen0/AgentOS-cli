@@ -58,7 +58,7 @@ class NestedEventModel(BaseModel):
 
 class TimestampedEventModel(BaseModel):
     """Model with datetime field"""
-    event_type: str
+    name: str
     occurred_at: datetime
     duration_ms: float
 
@@ -324,13 +324,13 @@ class TestDataValidation:
         
         now = datetime.utcnow()
         data = {
-            "event_type": "test",
+            "name": "test",
             "occurred_at": now.isoformat(),
             "duration_ms": 123.45
         }
         
         validated = validate_event_data("timed.event", data)
-        assert validated.event_type == "test"
+        assert validated.name == "test"
         assert isinstance(validated.occurred_at, datetime)
         assert validated.duration_ms == 123.45
     

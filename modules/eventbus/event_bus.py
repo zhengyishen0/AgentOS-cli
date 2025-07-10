@@ -255,7 +255,7 @@ class ConcurrentEventBus():
         else:
             return {event: self.get_schema(event) for event in self._schemas}
     
-    def has_handler(self, event_type: str) -> bool:
+    def has_handler(self, name: str) -> bool:
         """Check if handlers exist for an event type."""
-        return event_type in self._handlers and len(self._handlers[event_type]) > 0
+        return name in self._handlers and len(self._handlers[name]) > 0
 
