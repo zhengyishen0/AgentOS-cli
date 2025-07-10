@@ -11,7 +11,7 @@ import asyncio
 import logging
 from typing import Any, Dict, List, Optional, Union
 from .models import Event, ExecutionResult
-from .parameter_interpolator import ParameterInterpolator
+from .interpolator import ParameterInterpolator
 
 
 logger = logging.getLogger(__name__)
@@ -27,7 +27,7 @@ class EventChainExecutor:
         
     async def execute_chain(
         self,
-        chain: List[Union[Dict, List[Dict]]],
+        chain: List[Union[Event, List[Event]]],
         thread_id: str,
     ) -> ExecutionResult:
         """Execute an event chain.
@@ -53,14 +53,14 @@ class EventChainExecutor:
         start_time = asyncio.get_event_loop().time()
         
         try:
-            for item in chain:
-                if isinstance(item, list):
+            for event_task in chain:
+                if isinstance(event_task, list):
                     # Parallel execution
-                    parallel_results = await self._execute_parallel(item, thread_id)
+                    parallel_results = await self._execute_parallel(event_task, thread_id)
                     executed_events.extend(parallel_results)
                 else:
                     # Sequential execution
-                    event_result = await self._execute_single(item, thread_id)
+                    event_result = await self._execute_single(event_task, thread_id)
                     executed_events.append(event_result)
                     
                     # Check for errors
@@ -69,7 +69,7 @@ class EventChainExecutor:
                             thread_id=thread_id,
                             events=executed_events,
                             success=False,
-                            error=f"Event {event_result.type} failed: {event_result.error}",
+                            error=f"Event {event_result.name} failed: {event_result.error}",
                             total_execution_time_ms=(asyncio.get_event_loop().time() - start_time) * 1000
                         )
                         
@@ -90,39 +90,33 @@ class EventChainExecutor:
                 total_execution_time_ms=(asyncio.get_event_loop().time() - start_time) * 1000
             )
     
-    async def _execute_single(self, event_spec: Dict, thread_id: str) -> Event:
+    async def _execute_single(self, event: Event, thread_id: str) -> Event:
         """Execute a single event."""
         start_time = asyncio.get_event_loop().time()
         
-        chain_event = Event(
-            type=event_spec['event'],
-            data=event_spec.get('params', {}).copy(),  # Create Event with chain-specific data
-            source="chain"
-        )
-        
         try:
             # Interpolate parameters
-            print(f"chain_event.data: {chain_event.data}")
-            interpolated_params = await self._interpolate_params(chain_event.data)
+            print(f"chain_event.data: {event.data}")
+            interpolated_params = await self._interpolate_params(event.data)
             print(f"interpolated_params: {interpolated_params}")
             try:
-                event_schema = self.event_bus.get_schema(chain_event.type)
+                event_schema = self.event_bus.get_schema(event.name)
             except Exception as e:
-                print(f"Error getting schema for {chain_event.type}: {e}")
+                print(f"Error getting schema for {event.name}: {e}")
                 event_schema = None
         
             # Handle conditional logic
-            if chain_event.data.get('decide'):
+            if event.data.get('decide'):
                 decision = await self._handle_decide(
                     thread_id=thread_id,
-                    prompt=chain_event.data['decide'],
+                    prompt=event.data['decide'],
                     params=interpolated_params,
                     schema=event_schema
                 )
                 if decision['action'] == 'skip':
-                    chain_event.result = {'skipped': True, 'reason': decision.get('reason')}
-                    chain_event.status = "completed"
-                    return chain_event
+                    event.result = {'skipped': True, 'reason': decision.get('reason')}
+                    event.status = "completed"
+                    return event
                 elif decision['action'] == 'continue' and 'params' in decision:
                     interpolated_params.update(decision['params'])
             
@@ -140,28 +134,28 @@ class EventChainExecutor:
                 interpolated_params = completed_params
             
             # Update event data with interpolated params
-            chain_event.data = {
+            event.data = {
                 **interpolated_params,
                 '_thread_id': thread_id,
                 '_chain_execution': True
             }
 
             # Wait for event result (this needs enhancement in event_bus.py)
-            result = await self._publish_and_wait(chain_event)
-            chain_event.result = result
+            result = await self._publish_and_wait(event)
+            event.result = result
             
             # Store event result in interpolator's context.
-            self._interpolator.add_result(chain_event.type, result)
+            self._interpolator.add_result(event.name, result)
             
         except Exception as e:
             logger.error(f"Event execution failed: {e}")
-            chain_event.error = str(e)
-            chain_event.status = "failed"
+            event.error = str(e)
+            event.status = "failed"
             
-        chain_event.execution_time_ms = (asyncio.get_event_loop().time() - start_time) * 1000
-        return chain_event
+        event.execution_time_ms = (asyncio.get_event_loop().time() - start_time) * 1000
+        return event
     
-    async def _execute_parallel(self, events: List[Dict], thread_id: str) -> List[Event]:
+    async def _execute_parallel(self, events: List[Event], thread_id: str) -> List[Event]:
         """Execute multiple events in parallel."""
         tasks = [self._execute_single(event, thread_id) for event in events]
         results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -171,7 +165,7 @@ class EventChainExecutor:
             if isinstance(result, Exception):
                 # Create error event
                 chain_event = Event(
-                    type=events[i]['event'],
+                    name=events[i]['event'],
                     data=events[i].get('params', {}),
                     error=str(result),
                     status="failed",
@@ -265,34 +259,9 @@ class EventChainExecutor:
         If there are multiple handlers, we'll return the full dict.
         """
         result = await self.event_bus.publish(
-            event_type=event.type,
+            event_type=event.name,
             data=event.data,
             source=event.source
         )
         
         return result
-
-class EventChainBuilder:
-    """Helper class to build event chains programmatically."""
-    
-    def __init__(self):
-        self.chain: List[Union[Dict, List[Dict]]] = []
-    
-    def add_event(self, event: str, params: Optional[Dict] = None, decide: Optional[str] = None):
-        """Add a single event to the chain."""
-        event_spec = {'event': event}
-        if params:
-            event_spec['params'] = params
-        if decide:
-            event_spec['decide'] = decide
-        self.chain.append(event_spec)
-        return self
-    
-    def add_parallel(self, *events: Dict):
-        """Add parallel events to the chain."""
-        self.chain.append(list(events))
-        return self
-    
-    def build(self) -> List[Union[Dict, List[Dict]]]:
-        """Build and return the event chain."""
-        return self.chain

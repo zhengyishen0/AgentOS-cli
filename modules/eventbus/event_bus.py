@@ -56,29 +56,29 @@ class ConcurrentEventBus():
                 retention_days=retention_days
             )
     
-    def register(self, event_type: str, schema: Optional[Type[BaseModel]] = None):
+    def register(self, name: str, schema: Optional[Type[BaseModel]] = None):
         """Decorator to register event handlers with optional schema validation.
         
         Args:
-            event_type: The event type to handle (e.g., "task.schedule")
+            name: The event name to handle (e.g., "task.schedule")
             schema: Optional Pydantic schema for input validation
             
         Returns:
             Decorator function
         """
         def decorator(handler_func: Callable):
-            self._handlers[event_type].append(handler_func)
+            self._handlers[name].append(handler_func)
             if schema:
-                self._schemas[event_type] = schema
-            logger.info(f"Registered {handler_func.__name__} for {event_type}")
+                self._schemas[name] = schema
+            logger.info(f"Registered {handler_func.__name__} for {name}")
             return handler_func
         return decorator
 
-    async def publish(self, event_type: str, data: dict[str, Any], source: str = "system") -> dict[str, Any]:
+    async def publish(self, name: str, data: dict[str, Any], source: str = "system") -> dict[str, Any]:
         """Publish an event to all subscribers and return handler results.
 
         Args:
-            event_type: Type of event (e.g., "user.created")
+            name: Name of event (e.g., "user.created")
             data: Event data payload
             source: Source of the event
 
@@ -91,22 +91,22 @@ class ConcurrentEventBus():
             ValidationError: If data doesn't match the registered schema
         """
         # Validate event data against registered schema
-        if event_type in self._schemas:
+        if name in self._schemas:
             try:
-                schema = self._schemas[event_type]
+                schema = self._schemas[name]
                 validated_data = schema(**data)
                 # Convert back to dict for storage/transmission
                 data = validated_data.model_dump()
-                logger.debug(f"Event data validated for {event_type}")
+                logger.debug(f"Event data validated for {name}")
             except ValidationError as e:
-                logger.error(f"Event validation failed for {event_type}: {e}")
+                logger.error(f"Event validation failed for {name}: {e}")
                 raise
         else:
             logger.warning(
-                f"No schema registered for event type: {event_type}. Publishing without validation."
+                f"No schema registered for event type: {name}. Publishing without validation."
             )
 
-        event = Event(type=event_type, data=data, source=source)
+        event = Event(name=name, data=data, source=source)
 
         # Store in history
         self._event_history.append(event)
@@ -118,10 +118,10 @@ class ConcurrentEventBus():
             await self._storage.save_event(event.model_dump())
 
         # Log event
-        logger.info(f"Publishing event: {event_type} from {source}")
+        logger.info(f"Publishing event: {name} from {source}")
 
         # Get handlers for this event type
-        handlers = self._handlers.get(event_type, [])
+        handlers = self._handlers.get(name, [])
 
         # Execute handlers concurrently and collect results
         handler_results = {}
@@ -144,7 +144,7 @@ class ConcurrentEventBus():
                 handler_name = handlers[i].__name__
                 if isinstance(result, Exception):
                     logger.error(
-                        f"Handler {handler_name} failed for event {event_type}: {result}"
+                        f"Handler {handler_name} failed for event {name}: {result}"
                     )
                     handler_results[handler_name] = {"error": str(result)}
                 else:
@@ -187,26 +187,26 @@ class ConcurrentEventBus():
             # Multiple handlers - return dict with handler names as keys
             return handler_results
 
-    async def subscribe(self, event_type: str, handler: Callable) -> None:
+    async def subscribe(self, name: str, handler: Callable) -> None:
         """Subscribe to events of a specific type.
 
         Args:
-            event_type: Type of event to subscribe to
+            name: Name of event to subscribe to
             handler: Async or sync function to handle the event
         """
-        self._handlers[event_type].append(handler)
-        logger.info(f"Subscribed {handler.__name__} to {event_type}")
+        self._handlers[name].append(handler)
+        logger.info(f"Subscribed {handler.__name__} to {name}")
 
-    async def unsubscribe(self, event_type: str, handler: Callable) -> None:
+    async def unsubscribe(self, name: str, handler: Callable) -> None:
         """Unsubscribe from events.
 
         Args:
-            event_type: Type of event to unsubscribe from
+            name: Name of event to unsubscribe from
             handler: Handler function to remove
         """
-        if event_type in self._handlers and handler in self._handlers[event_type]:
-            self._handlers[event_type].remove(handler)
-            logger.info(f"Unsubscribed {handler.__name__} from {event_type}")
+        if name in self._handlers and handler in self._handlers[name]:
+            self._handlers[name].remove(handler)
+            logger.info(f"Unsubscribed {handler.__name__} from {name}")
 
     async def _execute_handler(self, handler: Callable, event: Event) -> Any:
         """Execute an async handler with error handling."""
@@ -225,10 +225,10 @@ class ConcurrentEventBus():
             logger.error(f"Sync handler {handler.__name__} failed: {e}")
             raise
 
-    def get_event_history(self, event_type: str | None = None) -> list[Event]:
+    def get_event_history(self, name: str | None = None) -> list[Event]:
         """Get event history, optionally filtered by type."""
-        if event_type:
-            return [e for e in self._event_history if e.type == event_type]
+        if name:
+            return [e for e in self._event_history if e.name == name]
         return self._event_history.copy()
 
     def clear_history(self) -> None:
@@ -240,12 +240,12 @@ class ConcurrentEventBus():
         return {event: [h.__name__ for h in handlers] 
                 for event, handlers in self._handlers.items()}
     
-    def get_schema(self, event_type: str) -> Optional[dict]:
+    def get_schema(self, name: str) -> Optional[dict]:
         """Get json schema for an event type."""
         try:
-            return self._schemas.get(event_type).model_json_schema()
+            return self._schemas.get(name).model_json_schema()
         except Exception as e:
-            logger.error(f"Error getting schema for {event_type}: {e}")
+            logger.error(f"Error getting schema for {name}: {e}")
             return None
     
     def list_schemas(self, brief: bool = False) -> dict[str, dict]:

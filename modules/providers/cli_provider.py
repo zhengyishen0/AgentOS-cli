@@ -246,7 +246,7 @@ user.input → thread.match → agent.think
             history = self.event_bus.get_event_history()
             self.display_output(f"Event history: {len(history)} events", "debug")
             for event in history[-5:]:  # Show last 5 events
-                self.display_output(f"  {event.timestamp}: {event.type} - {event.data}", "debug")
+                self.display_output(f"  {event.timestamp}: {event.name} - {event.data}", "debug")
         elif command_type == "clear":
             self.event_bus.clear_history()
             self.display_output("Event history cleared", "success")

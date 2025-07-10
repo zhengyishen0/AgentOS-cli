@@ -23,8 +23,8 @@ async def thread_match(event: Event) -> Dict[str, Any]:
         {"input": input_data.input, "thread_data": thread_data}
     )
 
-    # Access the thread_confidence attribute directly
-    thread_confidence = thread_model.thread_confidence
+    # Access the thread_confidence from the returned dictionary
+    thread_confidence = thread_model.get("thread_confidence", {})
     
     if input_data.thread_id and thread_confidence.get(input_data.thread_id, 0) > confidence_threshold:
         # Continue in the existing thread
@@ -49,7 +49,7 @@ async def thread_match(event: Event) -> Dict[str, Any]:
     
     # Add event to thread
     await thread_manager.add_event_to_thread(thread_id, Event(
-        type="agent.think",
+        name="agent.think",
         data={"thread_id": thread_id, "prompt": input_data.input},
         result={"thread_id": thread_id, "prompt": input_data.input},
         status="completed",

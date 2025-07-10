@@ -59,7 +59,7 @@ class ThreadManager:
             
             # Add creation event
             creation_event = Event(
-                type="thread.created",
+                name="thread.created",
                 data={"thread_id": thread_id, "summary": summary},
                 result={"thread_id": thread_id, "summary": summary},
                 status="completed",
@@ -133,7 +133,7 @@ class ThreadManager:
         if thread:
             thread.status = "archived"
             archive_event = Event(
-                type="thread.archived",
+                name="thread.archived",
                 data={"thread_id": thread_id},
                 result={"thread_id": thread_id},
                 status="completed",

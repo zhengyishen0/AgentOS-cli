@@ -10,7 +10,7 @@ from modules.eventbus.schemas import (
     AgentChainInput, AgentThinkInput, AgentThinkOutput, 
     AgentDecideInput, AgentReplyInput, AgentThreadInput, AgentThreadOutput
 )
-from modules import eventbus, thread_manager, executor
+from modules import eventbus, thread_manager, executor, cli_provider
 from pprint import pprint
 
 logger = logging.getLogger(__name__)
@@ -35,10 +35,10 @@ async def agent_think(event: Event) -> Dict[str, Any]:
 You are a strategic planning AI agent. Your role is to analyze user requests and decide the best approach.
 
 For SIMPLE requests that can be answered directly:
-- Return: {{"event": "agent.reply", "params": {{"message": "your direct answer"}}}}
+- Return: {{"event": "agent.reply", "message": {{"your direct answer"}}}}
 
 For COMPLEX requests requiring multiple steps:
-- Return: {{"event": "agent.chain", "params": {{"message": "pseudocode plan in bullet points"}}}}
+- Return: {{"event": "agent.chain", "message": {{"pseudocode plan in bullet points"}}}}
 
 We have a list of tools you can use. This is their schemas:
 {json.dumps(registered_schemas, indent=2)}
@@ -80,8 +80,8 @@ Keep plans focused and efficient. Use parallel execution where possible.
 
     # Add event to thread
     think_event = Event(
-        type=output['event'],
-        data={"message": output['message']},
+        name=output['event'],
+        data={"input": input_data.prompt},
         result={"message": output['message']},
         status="completed",
         source="agent.think"
@@ -123,6 +123,11 @@ Your task is to:
 Registered tools you can use and their schemas:
 {json.dumps(registered_schemas, indent=2)}
 
+Output format: List(Union[Event, List[Event]])
+Event: {{"name": "event_name", "data": {{"param": "value"}}, "source": "event_source"}},
+Sequential Events: [Event, Event, ...]
+Parallel Events: [[Event, Event, ...], [Event, Event, ...], ...]
+
 IMPORTANT RULES:
 - No reasoning or interpretation - just mechanical translation
 - Use exact event names and parameter structures
@@ -137,31 +142,31 @@ IMPORTANT RULES:
 Example translation:
 Plan: "1. Get current date\\n2. Add 7 days\\n3. Format as ISO string"
 Chain: [
-  {{"event": "tools.now", "params": {{}}}},
-  {{"event": "tools.date_calc", "params": {{"from": "{{tools.now.result}}", "add": "7 days"}}}},
-  {{"event": "tools.format", "params": {{"date": "{{tools.date_calc.result}}", "format": "ISO"}}}},
-  {{"event": "agent.think", "params": {{"thread_id": "current"}}}}
+  {{"name": "tools.now", "data": {{}}}},
+  {{"name": "tools.date_calc", "data": {{"from": "{{tools.now.result}}", "add": "7 days"}}}},
+  {{"name": "tools.format", "data": {{"date": "{{tools.date_calc.result}}", "format": "ISO"}}}},
+  {{"name": "agent.think", "data": {{"thread_id": "current"}}}}
 ]
 
 For parallel operations:
 Plan: "Get both marketing and engineering team members"  
 Chain: [
   [
-    {{"event": "team.members", "params": {{"team": "marketing"}}}},
-    {{"event": "team.members", "params": {{"team": "engineering"}}}}
+    {{"name": "team.members", "data": {{"team": "marketing"}}}},
+    {{"name": "team.members", "data": {{"team": "engineering"}}}}
   ],
-  {{"event": "agent.think", "params": {{"thread_id": "current"}}}}
+  {{"name": "agent.think", "data": {{"thread_id": "current"}}}}
 ]
 
 Example json format output:
 {{
   "chain": [
-    {{"event": "tools.now", "params": {{}}}},
+    {{"name": "tools.now", "data": {{}}}},
     [  # parallel execution
-      {{"event": "tools.date_calc", "params": {{"from": "tools.now.result", "add": "7 days"}}}},
-      {{"event": "tools.format", "params": {{"date": "tools.date_calc.result", "format": "ISO"}}}}
+      {{"name": "tools.date_calc", "data": {{"from": "tools.now.result", "add": "7 days"}}}},
+      {{"name": "tools.format", "data": {{"date": "tools.date_calc.result", "format": "ISO"}}}}
     ],
-    {{"event": "agent.think", "params": {{"thread_id": "current"}}}}
+    {{"name": "agent.think", "data": {{"thread_id": "current"}}}}
   ]
 }}
 """
@@ -302,15 +307,11 @@ async def agent_thread(event: Event) -> Dict[str, Any]:
         }
     )
     
-    return output
+    return output.model_dump()
 
 
 @eventbus.register("agent.reply", schema=AgentReplyInput)
-async def agent_reply(event: Event) -> Dict[str, Any]:
+async def agent_reply(event: Event) -> None:
     """Send a reply to the user"""
     input_data = AgentReplyInput(**event.data)
-
-    # Use global CLI provider for notifications
-    from modules import cli_provider
     cli_provider.display_output(input_data.message, "agent")
-    return input_data

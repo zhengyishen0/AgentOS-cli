@@ -46,9 +46,9 @@ class TestEvent:
     
     def test_event_creation_with_defaults(self):
         """Test creating an event with default values."""
-        event = Event(type="test.event", data={"key": "value"})
+        event = Event(name="test.event", data={"key": "value"})
         
-        assert event.type == "test.event"
+        assert event.name == "test.event"
         assert event.data == {"key": "value"}
         assert event.source == "system"
         assert isinstance(event.timestamp, datetime)
@@ -57,13 +57,13 @@ class TestEvent:
         """Test creating an event with custom values."""
         custom_timestamp = datetime(2023, 1, 1, 12, 0, 0)
         event = Event(
-            type="custom.event",
+            name="custom.event",
             data={"message": "hello"},
             timestamp=custom_timestamp,
             source="test_service"
         )
         
-        assert event.type == "custom.event"
+        assert event.name == "custom.event"
         assert event.data == {"message": "hello"}
         assert event.source == "test_service"
         assert event.timestamp == custom_timestamp
@@ -72,7 +72,7 @@ class TestEvent:
         """Test converting event to dictionary."""
         timestamp = datetime(2023, 1, 1, 12, 0, 0)
         event = Event(
-            type="test.event",
+            name="test.event",
             data={"key": "value"},
             timestamp=timestamp,
             source="test_source"

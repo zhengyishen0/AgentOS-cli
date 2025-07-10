@@ -3,7 +3,7 @@
 import pytest
 import json
 from unittest.mock import patch
-from modules.eventbus.parameter_interpolator import ParameterInterpolator, create_interpolator
+from modules.eventbus.interpolator import ParameterInterpolator, create_interpolator
 
 
 class TestParameterInterpolator:
