@@ -1,8 +1,8 @@
 """Memory operation event handlers for AgentOS."""
 
 from typing import Dict, Any
-from ..eventbus.event_schemas import MemoryAppendInput, MemorySearchInput, MemoryDigestInput
-from ..eventbus.event_bus import Event
+from modules.eventbus.schemas import MemoryAppendInput, MemorySearchInput, MemoryDigestInput
+from modules.eventbus import Event
 from modules import eventbus
 
 

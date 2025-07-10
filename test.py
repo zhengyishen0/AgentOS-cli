@@ -1,7 +1,7 @@
 import asyncio
 from modules.handlers.agent_handlers import agent_decide, agent_think, agent_chain
 from modules.eventbus.event_bus import Event
-from modules.eventbus.event_schemas import AgentThinkInput
+from modules.eventbus.schemas import AgentThinkInput
 from pprint import pprint
 from modules import eventbus
 
@@ -21,7 +21,7 @@ prompt_chain = """
 event_think = Event(
     type="agent.think",
     data={
-        "thread_id": "thread_20250705_164835_149647",
+        "thread_id": "thread_20250710_123000_7caf52",
         "prompt": prompt_think,
     },
 )
@@ -29,7 +29,7 @@ event_think = Event(
 event_chain = Event(
     type="agent.chain",
     data={
-        "thread_id": "thread_20250705_164835_149647",
+        "thread_id": "thread_20250710_123000_7caf52",
         "message": prompt_chain,
     },
 )
@@ -44,7 +44,7 @@ the last agent will be ask to repeat the whole conversation without been told th
 new_think_event = Event(
     type="agent.think",
     data={
-        "thread_id": "thread_20250705_164835_149647",
+        "thread_id": "thread_20250710_123000_7caf52",
         "prompt": new_think_prompt,
     },
 )
@@ -58,7 +58,7 @@ new_chain_prompt = """
 new_chain_event = Event(
     type="agent.chain",
     data={
-        "thread_id": "thread_20250705_164835_149647",
+        "thread_id": "thread_20250710_123000_7caf52",
         "message": new_chain_prompt,
     },
 )

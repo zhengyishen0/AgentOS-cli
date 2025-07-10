@@ -63,13 +63,26 @@ class EventStorage:
         timestamp_str = event_data.get("timestamp")
         if timestamp_str:
             try:
-                timestamp = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
-            except ValueError:
+                if isinstance(timestamp_str, str):
+                    timestamp = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+                elif isinstance(timestamp_str, datetime):
+                    timestamp = timestamp_str
+                else:
+                    logger.warning(f"Unexpected timestamp type: {type(timestamp_str)}")
+                    timestamp = datetime.now()
+            except ValueError as e:
+                logger.warning(f"ValueError parsing timestamp: {e}")
                 timestamp = datetime.now()
         else:
             timestamp = datetime.now()
         
-        event_record = event_data
+        # Create a serializable copy of the event data
+        event_record = {}
+        for key, value in event_data.items():
+            if isinstance(value, datetime):
+                event_record[key] = value.isoformat()
+            else:
+                event_record[key] = value
         
         try:
             async with self._lock:

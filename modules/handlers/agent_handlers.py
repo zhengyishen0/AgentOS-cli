@@ -5,8 +5,8 @@ from datetime import datetime, timezone
 from openai import OpenAI
 import json
 from typing import Dict, Any
-from ..eventbus.models import Event
-from ..eventbus.event_schemas import (
+from modules.eventbus.models import Event
+from modules.eventbus.schemas import (
     AgentChainInput, AgentThinkInput, AgentThinkOutput, 
     AgentDecideInput, AgentReplyInput, AgentThreadInput, AgentThreadOutput
 )

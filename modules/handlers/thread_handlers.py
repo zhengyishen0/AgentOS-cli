@@ -3,10 +3,9 @@
 from datetime import datetime, timezone
 from typing import Dict, Any
 import uuid
-from ..eventbus.event_schemas import ThreadMatchInput, ThreadSummarizeInput, ThreadCreateInput, ThreadArchivedInput, AgentThreadOutput
-from ..eventbus.event_bus import Event
+from modules.eventbus.schemas import ThreadMatchInput, ThreadSummarizeInput, ThreadCreateInput, ThreadArchivedInput, AgentThreadOutput
+from modules.eventbus import Event
 from modules import eventbus, thread_manager
-from modules.eventbus.models import Event
 
 
 # TODO: might be better to merge this with agent.thread

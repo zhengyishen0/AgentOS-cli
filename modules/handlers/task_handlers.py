@@ -2,8 +2,8 @@
 
 from typing import Dict, Any
 import uuid
-from ..eventbus.event_schemas import TaskScheduleInput, TaskRegisterInput, TaskListInput
-from ..eventbus.event_bus import Event
+from modules.eventbus.schemas import TaskScheduleInput, TaskRegisterInput, TaskListInput
+from modules.eventbus import Event
 from modules import eventbus
 
 

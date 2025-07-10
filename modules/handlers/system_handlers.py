@@ -2,10 +2,9 @@
 
 from datetime import datetime, timezone
 from typing import Dict, Any
-from ..eventbus.event_schemas import WebSearchInput, WebFetchInput
-from ..eventbus.event_bus import Event
+from modules.eventbus.schemas import WebSearchInput, WebFetchInput
+from modules.eventbus import Event
 from modules import eventbus
-from ..providers.cli_provider import CLIProvider
 
 
 @eventbus.register("web.search", schema=WebSearchInput)
