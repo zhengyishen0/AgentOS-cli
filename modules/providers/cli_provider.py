@@ -9,6 +9,7 @@ import logging
 from typing import Dict, Any, Optional, List
 from datetime import datetime, timezone
 from modules import eventbus
+from modules.providers.thread_manager import ThreadManager
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +26,217 @@ class CLIProvider:
         self.event_bus = event_bus or eventbus
         self.session_id = None
         self._running = False
+        
+        # Thread navigation state
+        self._threads_cache: List[Dict[str, Any]] = []
+        self._current_thread_index: int = -1
+        self._current_thread_id: Optional[str] = None
+        self._threads_loaded = False
+        
+        # Create thread manager instance
+        self._thread_manager = ThreadManager()
+    
+    async def _load_threads_cache(self) -> None:
+        """Load all threads into memory cache for navigation."""
+        try:
+            if self._threads_loaded:
+                return
+                
+            # Get all active threads
+            threads = await self._thread_manager.list_threads(status="active")
+            
+            # Convert to simple format for caching
+            self._threads_cache = []
+            for thread in threads:
+                self._threads_cache.append({
+                    'id': thread.thread_id,
+                    'summary': thread.summary,
+                    'updated_at': thread.updated_at,
+                    'created_at': thread.created_at
+                })
+            
+            # Sort by updated_at (newest first)
+            self._threads_cache.sort(key=lambda x: x['updated_at'], reverse=True)
+            
+            # Set current thread to newest
+            if self._threads_cache:
+                self._current_thread_index = 0
+                self._current_thread_id = self._threads_cache[0]['id']
+            else:
+                # No threads exist, create a new one
+                await self._create_new_thread()
+            
+            self._threads_loaded = True
+            logger.info(f"Loaded {len(self._threads_cache)} threads into cache")
+            
+        except Exception as e:
+            logger.error(f"Failed to load threads cache: {e}")
+            # Fallback: create new thread
+            await self._create_new_thread()
+    
+    async def _create_new_thread(self) -> None:
+        """Create a new thread and set it as current."""
+        try:
+            thread = await self._thread_manager.create_thread()
+            self._current_thread_id = thread.thread_id
+            
+            # Add to cache at the beginning (newest)
+            new_thread_data = {
+                'id': thread.thread_id,
+                'summary': thread.summary,
+                'updated_at': thread.updated_at,
+                'created_at': thread.created_at
+            }
+            
+            self._threads_cache.insert(0, new_thread_data)
+            self._current_thread_index = 0
+            
+            logger.info(f"Created new thread: {thread.thread_id}")
+            
+        except Exception as e:
+            logger.error(f"Failed to create new thread: {e}")
+            # Fallback to a default thread ID
+            self._current_thread_id = "default_thread"
+    
+    def _get_current_thread_summary(self) -> str:
+        """Get the current thread summary for display."""
+        if not self._current_thread_id:
+            return "No thread selected"
+        
+        if self._current_thread_index >= 0 and self._current_thread_index < len(self._threads_cache):
+            thread_data = self._threads_cache[self._current_thread_index]
+            summary = thread_data['summary']
+            # Truncate if too long
+            if len(summary) > 60:
+                summary = summary[:57] + "..."
+            return f"{thread_data['id']}: {summary}"
+        
+        return f"{self._current_thread_id}: Unknown thread"
+    
+    async def _switch_to_thread(self, direction: str) -> None:
+        """Switch to previous or next thread.
+        
+        Args:
+            direction: 'back' or 'next'
+        """
+        if not self._threads_cache:
+            self.display_output("No threads available", "warning")
+            return
+        
+        if direction == "back":
+            if self._current_thread_index >= len(self._threads_cache) - 1:
+                self.display_output("No older threads available", "info")
+                return
+            self._current_thread_index += 1
+        elif direction == "next":
+            if self._current_thread_index <= 0:
+                self.display_output("No newer threads available", "info")
+                return
+            self._current_thread_index -= 1
+        
+        # Update current thread
+        thread_data = self._threads_cache[self._current_thread_index]
+        self._current_thread_id = thread_data['id']
+        
+        self.display_output(f"Switched to thread: {self._get_current_thread_summary()}", "success")
+    
+    async def _list_threads(self) -> None:
+        """Display list of top 10 threads."""
+        if not self._threads_cache:
+            self.display_output("No threads available", "info")
+            return
+        
+        self.display_output("🧵 Available Threads (Top 10):", "info")
+        
+        for i, thread_data in enumerate(self._threads_cache[:10]):
+            summary = thread_data['summary']
+            if len(summary) > 50:
+                summary = summary[:47] + "..."
+            
+            # Mark current thread
+            marker = "→ " if i == self._current_thread_index else "  "
+            self.display_output(f"{marker}{i+1}. {thread_data['id']}: {summary}", "info")
+        
+        if len(self._threads_cache) > 10:
+            self.display_output(f"... and {len(self._threads_cache) - 10} more threads", "info")
+    
+    async def _show_thread_history(self) -> None:
+        """Display the chat history of the current thread."""
+        if not self._current_thread_id:
+            self.display_output("No thread selected", "warning")
+            return
+        
+        try:
+            # Load the current thread
+            thread = await self._thread_manager.get_thread(self._current_thread_id)
+            if not thread:
+                self.display_output(f"Thread {self._current_thread_id} not found", "error")
+                return
+            
+            self.display_output(f"📜 Chat History for Thread: {thread.thread_id}", "info")
+            self.display_output(f"Summary: {thread.summary}", "info")
+            self.display_output(f"Created: {thread.created_at}", "info")
+            self.display_output(f"Updated: {thread.updated_at}", "info")
+            print("-" * 60)
+            
+            if not thread.events:
+                self.display_output("No events in this thread yet", "info")
+                return
+            
+            # Display the 10 latest events in chronological order
+            recent_events = thread.events[-10:] if len(thread.events) > 10 else thread.events
+            event_counter = 1
+            for event in recent_events:
+                timestamp = event.timestamp.strftime("%H:%M:%S") if hasattr(event.timestamp, 'strftime') else str(event.timestamp)
+                
+                # Format different event types
+                if event.name == "user.input":
+                    self.display_output(f"{event_counter}. [{timestamp}] 👤 User: {event.data.get('input', '')}", "user")
+                    event_counter += 1
+                elif event.name == "thread.match":
+                    # Show user input from thread.match events
+                    user_input = event.data.get('input', '')
+                    if user_input:
+                        self.display_output(f"{event_counter}. [{timestamp}] 👤 User: {user_input}", "user")
+                        event_counter += 1
+                    # Also show thread action if available (but don't increment counter)
+                    if event.result and 'action' in event.result:
+                        action = event.result['action']
+                        if action == "new":
+                            self.display_output(f"   [{timestamp}] 🆕 New thread created", "info")
+                        elif action == "switch":
+                            self.display_output(f"   [{timestamp}] 🔄 Switched to existing thread", "info")
+                        elif action == "continue":
+                            self.display_output(f"   [{timestamp}] ➡️ Continued in thread", "info")
+                elif event.name == "agent.reply":
+                    message = event.data.get('message', '')
+                    self.display_output(f"{event_counter}. [{timestamp}] 🤖 Agent: {message}", "agent")
+                    event_counter += 1
+                elif event.name == "agent.think":
+                    # Only show agent thinking if it has a meaningful result
+                    if event.result and 'message' in event.result and event.result.get('event') == 'agent.reply':
+                        # Skip showing the thinking process since we show the reply
+                        continue
+                    elif event.result and 'message' in event.result:
+                        self.display_output(f"{event_counter}. [{timestamp}] 🤔 Agent thinking: {event.result['message']}", "debug")
+                        event_counter += 1
+                elif event.name == "thread.created":
+                    self.display_output(f"{event_counter}. [{timestamp}] 🧵 Thread created", "info")
+                    event_counter += 1
+                else:
+                    # Generic event display for other events
+                    self.display_output(f"{event_counter}. [{timestamp}] {event.name}: {event.data}", "debug")
+                    event_counter += 1
+            
+            print("-" * 60)
+            if len(thread.events) > 10:
+                self.display_output(f"Showing 10 latest events (total: {len(thread.events)})", "info")
+            else:
+                self.display_output(f"Total events: {len(thread.events)}", "info")
+            
+        except Exception as e:
+            logger.error(f"Failed to show thread history: {e}")
+            self.display_output(f"Error loading thread history: {e}", "error")
     
     async def get_user_input(self, prompt: str = "> ") -> str:
         """Get user input from the command line.
@@ -54,6 +266,7 @@ class CLIProvider:
             "success": "✅",
             "debug": "🐛",
             "agent": "🤖",
+            "user": "👨",
         }
         
         icon = level_icons.get(level, "ℹ️")
@@ -124,14 +337,19 @@ class CLIProvider:
             logger.error(f"Failed to publish event {name}: {e}")
             return {"error": str(e)}
     
-    async def publish_user_input(self, input: str) -> None:
+    async def publish_user_input(self, input: str, thread_id: str = None) -> None:
         """Process user input through the event system.
         
         Args:
             input: User input text
+            thread_id: Optional thread ID (uses current thread if not provided)
         """
+        # Use current thread ID if not provided
+        if thread_id is None:
+            thread_id = self._current_thread_id or "new_thread"
+        
         # Publish user.input → thread.match → agent.think
-        data = {"input": input}
+        data = {"input": input, "thread_id": thread_id}
         await self.publish_event("thread.match", data)
 
 
@@ -173,6 +391,20 @@ class CLIProvider:
             return {"type": "threads"}
         elif command == "events":
             return {"type": "events"}
+        elif command == "thread":
+            # Thread navigation commands
+            if args == "new":
+                return {"type": "thread_new"}
+            elif args == "back":
+                return {"type": "thread_previous"}
+            elif args == "next":
+                return {"type": "thread_next"}
+            elif args == "list":
+                return {"type": "thread_list"}
+            elif args == "history":
+                return {"type": "thread_history"}
+            else:
+                return {"type": "thread_unknown", "args": args}
         
         # Unknown slash command
         return {"type": "unknown", "command": command}
@@ -192,6 +424,13 @@ Available slash commands:
 /events   - Show recent events
 /chain <description> - Execute a custom event chain
 
+Thread navigation commands:
+/thread new      - Create and switch to new thread
+/thread back     - Switch to older thread
+/thread next     - Switch to newer thread
+/thread list     - List top 10 threads with summaries
+/thread history  - Show chat history of current thread
+
 Any other text (without /) will be processed as user input through EventChain:
 user.input → thread.match → agent.think
         """
@@ -206,9 +445,16 @@ user.input → thread.match → agent.think
         self.display_output("Type /help for available commands", "info")
         print("-" * 50)
         
+        # Load threads at startup
+        await self._load_threads_cache()
+        
         while self._running:
             try:
-                user_input = await self.get_user_input("\n> ")
+                # Display current thread summary
+                thread_summary = self._get_current_thread_summary()
+                prompt = f"\n[{thread_summary}]\n> "
+                
+                user_input = await self.get_user_input(prompt)
                 
                 if not user_input:
                     continue
@@ -259,6 +505,20 @@ user.input → thread.match → agent.think
         elif command_type == "custom_chain":
             # This would require more sophisticated chain parsing
             self.display_output("Custom chain execution not yet implemented", "warning")
+        elif command_type == "thread_new":
+            await self._create_new_thread()
+            self.display_output(f"Created and switched to new thread: {self._get_current_thread_summary()}", "success")
+        elif command_type == "thread_previous":
+            await self._switch_to_thread("back")
+        elif command_type == "thread_next":
+            await self._switch_to_thread("next")
+        elif command_type == "thread_list":
+            await self._list_threads()
+        elif command_type == "thread_history":
+            await self._show_thread_history()
+        elif command_type == "thread_unknown":
+            args = command.get("args", "")
+            self.display_output(f"Unknown thread command: '{args}'. Use: new, back, next, list, or history", "error")
         elif command_type == "unknown":
             unknown_cmd = command.get("command", "unknown")
             self.display_output(f"Unknown command: /{unknown_cmd}. Type /help for available commands.", "error")
@@ -270,6 +530,10 @@ user.input → thread.match → agent.think
         self.display_output(f"Running: {self._running}", "info")
         self.display_output(f"Event Bus: {'Connected' if self.event_bus else 'Not connected'}", "info")
         
+        # Show thread information
+        self.display_output(f"Current Thread: {self._get_current_thread_summary()}", "info")
+        self.display_output(f"Total Threads: {len(self._threads_cache)}", "info")
+        
         # Show event bus stats if available
         if hasattr(self.event_bus, 'get_event_history'):
             history = self.event_bus.get_event_history()
@@ -277,9 +541,8 @@ user.input → thread.match → agent.think
     
     def _show_threads(self) -> None:
         """Show available threads."""
-        self.display_output("🧵 Available Threads", "info")
-        # This would integrate with thread storage when available
-        self.display_output("Thread management not yet implemented", "warning")
+        # Use the new thread listing functionality
+        asyncio.create_task(self._list_threads())
     
     def _show_recent_events(self) -> None:
         """Show recent events in a more detailed format."""

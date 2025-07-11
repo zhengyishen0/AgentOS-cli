@@ -74,14 +74,16 @@ Keep plans focused and efficient. Use parallel execution where possible.
     )
     
     output = response.output_parsed.model_dump()
-    print('agent.think output:')
+    print('\nagent.think output:')
     pprint(output)
+    print('\n\n')
 
     data = {
         "thread_id": input_data.thread_id,
         "message": output['message']
     }
     
+    print(f"data: {data}")
     await eventbus.publish(output['event'], data)
 
     return output
@@ -175,8 +177,9 @@ Example json format output:
     chain = json.loads(data).get('chain', [])
     chain_events = convert_chain_to_events(chain)
 
-    print('agent.chain output:')
+    print('\nagent.chain output:')
     pprint(chain_events)
+    print('\n\n')
 
     # Execute the chain
     execution_result = await executor.execute_chain(

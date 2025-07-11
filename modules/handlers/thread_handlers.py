@@ -14,33 +14,19 @@ async def thread_match(event: Event) -> Dict[str, Any]:
     """Determine which thread a message belongs to"""
 
     # Validate input data
-    confidence_threshold = 0.5
-    input_data = ThreadMatchInput(**event.data)
-    thread_data = await thread_manager.thread_summary()
-    
-    thread_model = await eventbus.publish(
-        "agent.thread",
-        {"input": input_data.input, "thread_data": thread_data}
-    )
-    # Access the thread_confidence from the returned dictionary
-    thread_confidence = thread_model.get("thread_confidence", {})
     thread_action = ""
+    input_data = ThreadMatchInput(**event.data)
+    if input_data.thread_id == "new_thread":
+        thread_data = await thread_manager.thread_summary()
     
-    if input_data.thread_id and thread_confidence.get(input_data.thread_id, 0) > confidence_threshold:
-        # Continue in the existing thread
-        thread_id = input_data.thread_id
-        thread_action = "continue"
-    else:
-        # Find the thread with highest confidence
-        max_confidence = 0
-        best_thread_id = None
+        data = await eventbus.publish(
+            "agent.thread",
+            {"input": input_data.input, "thread_data": thread_data}
+        )
+        thread_confidence = data.get("thread_confidence", {})
+        best_thread_id = get_best_thread_id(thread_confidence)
         
-        for _thread_id, confidence in thread_confidence.items():
-            if confidence > max_confidence:
-                max_confidence = confidence
-                best_thread_id = _thread_id
-        
-        if best_thread_id and max_confidence > confidence_threshold:
+        if best_thread_id:
             # Switch to the thread with highest confidence
             thread_id = best_thread_id
             thread_action = "switch"
@@ -49,9 +35,13 @@ async def thread_match(event: Event) -> Dict[str, Any]:
             new_thread = await thread_manager.create_thread(summary=f"New Thread")
             thread_id = new_thread.thread_id
             thread_action = "new"
+        
+    else:
+        # Continue in the existing thread
+        thread_id = input_data.thread_id
+        thread_action = "continue"
     
-    
-    # Publish the event
+    # Publish the event with thread_id
     await eventbus.publish("agent.think", {"thread_id": thread_id, "prompt": input_data.input})
     
     thread = await thread_manager.get_thread(thread_id)
@@ -97,3 +87,18 @@ async def thread_archived(event: Event) -> None:
     # Mock: Log thread archival
     print(f"[System] Thread archived: {thread_id} - {reason}")
     return None
+
+
+def get_best_thread_id(thread_confidence):
+            max_confidence = 0
+            confidence_threshold = 0.5
+
+            best_thread_id = None
+            for _thread_id, confidence in thread_confidence.items():
+                if confidence > max_confidence:
+                    max_confidence = confidence
+                    best_thread_id = _thread_id
+            if max_confidence > confidence_threshold:
+                return best_thread_id
+            else:
+                return None

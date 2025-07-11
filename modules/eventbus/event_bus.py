@@ -106,7 +106,12 @@ class ConcurrentEventBus():
                 f"No schema registered for event type: {name}. Publishing without validation."
             )
 
-        event = Event(name=name, data=data, source=source)
+        # Ensure thread_id is always a string, never None
+        thread_id = data.get("thread_id")
+        if thread_id is None:
+            print(f"\n\nNo thread_id provided for event {name}. Using current thread.\n\n")
+        
+        event = Event(name=name, data=data, source=source, thread_id=thread_id)
 
         # Store in history
         self._event_history.append(event)
@@ -151,8 +156,11 @@ class ConcurrentEventBus():
                     handler_results[handler_name] = result
 
         # Combine thread_id from first result if not set
-        if event.thread_id is None and results[0] is not None:
-            event.thread_id = results[0].get("thread_id", None)
+        if event.thread_id is None and handler_results:
+            # Get the first handler result (for single handler events)
+            first_result = next(iter(handler_results.values()))
+            if isinstance(first_result, dict) and "thread_id" in first_result:
+                event.thread_id = first_result["thread_id"]
         event.completed_at = datetime.now(timezone.utc)
         event.execution_time_ms = (asyncio.get_event_loop().time() - start_time) * 1000
         

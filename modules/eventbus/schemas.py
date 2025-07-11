@@ -58,6 +58,7 @@ class AgentReplyInput(BaseModel):
     Expected behavior: Delivers a message to the user interface with appropriate
     styling based on the notification level (agent,info, warning, error, etc.).
     """
+    thread_id: str = Field(description="The thread context identifier")
     message: str = Field(description="Notification message")
     level: str = Field(default="agent", description="Notification level")
     title: Optional[str] = Field(default=None, description="Optional notification title")

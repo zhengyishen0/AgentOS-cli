@@ -40,13 +40,11 @@ class ThreadManager:
         async with self._lock:
             # Generate thread_id if not provided
             if not thread_id:
-                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
                 short_uuid = uuid.uuid4().hex[:6]
-                thread_id = f"thread_{timestamp}_{short_uuid}"
+                thread_id = f"thread_{short_uuid}"
             
             # Generate summary if not provided
-            if not summary:
-                summary = f"Thread created at {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+            summary = "New Thread" if not summary else summary
             
             # Check uniqueness
             if await self._storage.exists(thread_id):
@@ -65,6 +63,7 @@ class ThreadManager:
                 status="completed",
                 source="thread_manager"
             )
+
             thread.add_event(creation_event)
             
             # Save to storage
