@@ -22,13 +22,14 @@ async def thread_match(event: Event) -> Dict[str, Any]:
         "agent.thread",
         {"input": input_data.input, "thread_data": thread_data}
     )
-
     # Access the thread_confidence from the returned dictionary
     thread_confidence = thread_model.get("thread_confidence", {})
+    thread_action = ""
     
     if input_data.thread_id and thread_confidence.get(input_data.thread_id, 0) > confidence_threshold:
         # Continue in the existing thread
         thread_id = input_data.thread_id
+        thread_action = "continue"
     else:
         # Find the thread with highest confidence
         max_confidence = 0
@@ -42,22 +43,19 @@ async def thread_match(event: Event) -> Dict[str, Any]:
         if best_thread_id and max_confidence > confidence_threshold:
             # Switch to the thread with highest confidence
             thread_id = best_thread_id
+            thread_action = "switch"
         else:
             # Create a new thread if no good match found
             new_thread = await thread_manager.create_thread(summary=f"New Thread")
             thread_id = new_thread.thread_id
+            thread_action = "new"
     
-    # Add event to thread
-    await thread_manager.add_event_to_thread(thread_id, Event(
-        name="agent.think",
-        data={"thread_id": thread_id, "prompt": input_data.input},
-        result={"thread_id": thread_id, "prompt": input_data.input},
-        status="completed",
-        source="thread_handler"
-    ))
     
     # Publish the event
     await eventbus.publish("agent.think", {"thread_id": thread_id, "prompt": input_data.input})
+    
+    thread = await thread_manager.get_thread(thread_id)
+    return {"thread_id": thread_id, "action": thread_action, "summary": thread.summary}
 
 
 @eventbus.register("thread.summarize", schema=ThreadSummarizeInput)

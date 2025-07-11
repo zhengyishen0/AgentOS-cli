@@ -150,7 +150,9 @@ class ConcurrentEventBus():
                 else:
                     handler_results[handler_name] = result
 
-        # Update event with completion info
+        # Combine thread_id from first result if not set
+        if event.thread_id is None and results[0] is not None:
+            event.thread_id = results[0].get("thread_id", None)
         event.completed_at = datetime.now(timezone.utc)
         event.execution_time_ms = (asyncio.get_event_loop().time() - start_time) * 1000
         
@@ -176,6 +178,11 @@ class ConcurrentEventBus():
         # Persist completed event to storage if configured
         if self._storage:
             await self._storage.save_event(event.model_dump())
+
+        # Save event to thread
+        from modules import thread_manager
+        if event.thread_id is not None:
+            await thread_manager.add_event_to_thread(event.thread_id, event)
 
         # Return results based on number of handlers
         if len(handler_results) == 0:
