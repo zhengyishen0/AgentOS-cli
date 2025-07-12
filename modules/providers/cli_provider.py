@@ -88,9 +88,9 @@ class CLIProvider:
             # Truncate if too long
             if len(title) > 60:
                 title = title[:57] + "..."
-            return f"{thread_data.thread_id}: {title}"
+            return f"[{thread_data.thread_id}: {title}]"
         
-        return f"{self._current_thread_id}: Unknown thread"
+        return f"Unknown thread"
     
     async def _switch_to_thread(self, direction: str) -> None:
         """Switch to previous or next thread.
@@ -249,7 +249,8 @@ class CLIProvider:
         
         icon = level_icons.get(level, "ℹ️")
         leader = level.capitalize()
-        print(f"[{timestamp}] {icon} {leader}: {message}")
+        timestamp_str = f"[{timestamp}] " if timestamp else ""
+        print(f"{timestamp_str}{icon} {leader}: {message}")
     
     def display_result(self, result: Dict[str, Any]) -> None:
         """Display event chain result in a formatted way.
@@ -431,7 +432,7 @@ user.input → thread.match → agent.think
             try:
                 # Display current thread title
                 thread_title = self._get_current_thread_title()
-                prompt = f"\n[{thread_title}]\n> "
+                prompt = f"\n{thread_title}\n> "
                 
                 user_input = await self.get_user_input(prompt)
                 
