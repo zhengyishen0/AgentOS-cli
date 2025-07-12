@@ -8,6 +8,9 @@ import asyncio
 import logging
 from typing import Dict, Any, Optional, List
 from datetime import datetime, timezone
+from modules.providers.thread_manager import ThreadManager
+from modules.eventbus import Thread, ConcurrentEventBus
+# from modules.eventbus.event_bus import ConcurrentEventBus
 
 logger = logging.getLogger(__name__)
 
@@ -17,20 +20,17 @@ class CLIProvider:
     
     def __init__(self, event_bus=None, thread_manager=None):
         """Initialize the CLI provider.
-        
-        Args:
-            event_bus: Event bus instance to use for publishing events
         """
-        self.event_bus = event_bus
-        self._thread_manager = thread_manager
-        self.session_id = None
-        self._running = False
+        self.event_bus: ConcurrentEventBus = event_bus
+        self.thread_manager: ThreadManager = thread_manager
+        self.session_id: Optional[str] = None
+        self._running: bool = False
         
         # Thread navigation state
-        self._threads_cache: List[Dict[str, Any]] = []
+        self._threads_cache: List[Thread] = []
         self._current_thread_index: int = -1
         self._current_thread_id: Optional[str] = None
-        self._threads_loaded = False
+        self._threads_loaded: bool = False
         
         
     
@@ -41,25 +41,13 @@ class CLIProvider:
                 return
                 
             # Get all active threads
-            threads = await self._thread_manager.list_threads(status="active")
-            
-            # Convert to simple format for caching
-            self._threads_cache = []
-            for thread in threads:
-                self._threads_cache.append({
-                    'id': thread.thread_id,
-                    'summary': thread.summary,
-                    'updated_at': thread.updated_at,
-                    'created_at': thread.created_at
-                })
-            
-            # Sort by updated_at (newest first)
-            self._threads_cache.sort(key=lambda x: x['updated_at'], reverse=True)
+            self._threads_cache = await self.thread_manager.list_threads(status="active")
+            self._threads_cache.sort(key=lambda x: x.updated_at, reverse=True)
             
             # Set current thread to newest
             if self._threads_cache:
                 self._current_thread_index = 0
-                self._current_thread_id = self._threads_cache[0]['id']
+                self._current_thread_id = self._threads_cache[0].thread_id
             else:
                 # No threads exist, create a new one
                 await self._create_new_thread()
@@ -75,18 +63,11 @@ class CLIProvider:
     async def _create_new_thread(self) -> None:
         """Create a new thread and set it as current."""
         try:
-            thread = await self._thread_manager.create_thread()
+            thread = await self.thread_manager.create_thread()
             self._current_thread_id = thread.thread_id
-            
+                
             # Add to cache at the beginning (newest)
-            new_thread_data = {
-                'id': thread.thread_id,
-                'summary': thread.summary,
-                'updated_at': thread.updated_at,
-                'created_at': thread.created_at
-            }
-            
-            self._threads_cache.insert(0, new_thread_data)
+            self._threads_cache.insert(0, thread)
             self._current_thread_index = 0
             
             logger.info(f"Created new thread: {thread.thread_id}")
@@ -96,18 +77,18 @@ class CLIProvider:
             # Fallback to a default thread ID
             self._current_thread_id = "default_thread"
     
-    def _get_current_thread_summary(self) -> str:
-        """Get the current thread summary for display."""
+    def _get_current_thread_title(self) -> str:
+        """Get the current thread title for display."""
         if not self._current_thread_id:
             return "No thread selected"
         
         if self._current_thread_index >= 0 and self._current_thread_index < len(self._threads_cache):
             thread_data = self._threads_cache[self._current_thread_index]
-            summary = thread_data['summary']
+            title = thread_data.title
             # Truncate if too long
-            if len(summary) > 60:
-                summary = summary[:57] + "..."
-            return f"{thread_data['id']}: {summary}"
+            if len(title) > 60:
+                title = title[:57] + "..."
+            return f"{thread_data.thread_id}: {title}"
         
         return f"{self._current_thread_id}: Unknown thread"
     
@@ -134,9 +115,9 @@ class CLIProvider:
         
         # Update current thread
         thread_data = self._threads_cache[self._current_thread_index]
-        self._current_thread_id = thread_data['id']
+        self._current_thread_id = thread_data.thread_id
         
-        self.display_output(f"Switched to thread: {self._get_current_thread_summary()}", "success")
+        self.display_output(f"Switched to thread: {self._get_current_thread_title()}", "success")
     
     async def _list_threads(self) -> None:
         """Display list of top 10 threads."""
@@ -147,13 +128,13 @@ class CLIProvider:
         self.display_output("🧵 Available Threads (Top 10):", "info")
         
         for i, thread_data in enumerate(self._threads_cache[:10]):
-            summary = thread_data['summary']
-            if len(summary) > 50:
-                summary = summary[:47] + "..."
+            title = thread_data.title
+            if len(title) > 50:
+                title = title[:47] + "..."
             
             # Mark current thread
             marker = "→ " if i == self._current_thread_index else "  "
-            self.display_output(f"{marker}{i+1}. {thread_data['id']}: {summary}", "info")
+            self.display_output(f"{marker}{i+1}. {thread_data.thread_id}: {title}", "info")
         
         if len(self._threads_cache) > 10:
             self.display_output(f"... and {len(self._threads_cache) - 10} more threads", "info")
@@ -166,15 +147,16 @@ class CLIProvider:
         
         try:
             # Load the current thread
-            thread = await self._thread_manager.get_thread(self._current_thread_id)
+            thread = await self.thread_manager.get_thread(self._current_thread_id)
             if not thread:
                 self.display_output(f"Thread {self._current_thread_id} not found", "error")
                 return
             
-            self.display_output(f"📜 Chat History for Thread: {thread.thread_id}", "info")
-            self.display_output(f"Summary: {thread.summary}", "info")
+            self.display_output(f"📜 Chat History for Thread: [{thread.thread_id}] {thread.title}", "info")
+            self.display_output(f"Title: {thread.title}", "info")
             self.display_output(f"Created: {thread.created_at}", "info")
             self.display_output(f"Updated: {thread.updated_at}", "info")
+            self.display_output(f"Summary: {thread.summary}", "info") 
             print("-" * 60)
             
             if not thread.events:
@@ -447,9 +429,9 @@ user.input → thread.match → agent.think
         
         while self._running:
             try:
-                # Display current thread summary
-                thread_summary = self._get_current_thread_summary()
-                prompt = f"\n[{thread_summary}]\n> "
+                # Display current thread title
+                thread_title = self._get_current_thread_title()
+                prompt = f"\n[{thread_title}]\n> "
                 
                 user_input = await self.get_user_input(prompt)
                 
@@ -504,7 +486,7 @@ user.input → thread.match → agent.think
             self.display_output("Custom chain execution not yet implemented", "warning")
         elif command_type == "thread_new":
             await self._create_new_thread()
-            self.display_output(f"Created and switched to new thread: {self._get_current_thread_summary()}", "success")
+            self.display_output(f"Created and switched to new thread: {self._get_current_thread_title()}", "success")
         elif command_type == "thread_previous":
             await self._switch_to_thread("back")
         elif command_type == "thread_next":
@@ -528,7 +510,7 @@ user.input → thread.match → agent.think
         self.display_output(f"Event Bus: {'Connected' if self.event_bus else 'Not connected'}", "info")
         
         # Show thread information
-        self.display_output(f"Current Thread: {self._get_current_thread_summary()}", "info")
+        self.display_output(f"Current Thread: {self._get_current_thread_title()}", "info")
         self.display_output(f"Total Threads: {len(self._threads_cache)}", "info")
         
         # Show event bus stats if available

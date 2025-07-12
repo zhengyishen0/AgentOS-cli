@@ -70,6 +70,7 @@ class ThreadStorage:
                         thread_data = await self._read_file(thread_file)
                         if thread_data:
                             self._metadata_index[thread_id] = {
+                                "title": thread_data.get("title", ""),
                                 "summary": thread_data.get("summary", ""),
                                 "status": thread_data.get("status", "active"),
                                 "updated_at": thread_data.get("updated_at", ""),
@@ -112,6 +113,7 @@ class ThreadStorage:
                 
                 # Update metadata index
                 self._metadata_index[thread_id] = {
+                    "title": thread_data.get("title", ""),
                     "summary": thread_data.get("summary", ""),
                     "status": thread_data.get("status", "active"),
                     "updated_at": thread_data.get("updated_at", ""),

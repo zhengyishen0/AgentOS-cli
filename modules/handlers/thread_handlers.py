@@ -32,7 +32,7 @@ async def thread_match(event: Event) -> Dict[str, Any]:
             thread_action = "switch"
         else:
             # Create a new thread if no good match found
-            new_thread = await thread_manager.create_thread(summary=f"New Thread")
+            new_thread = await thread_manager.create_thread()
             thread_id = new_thread.thread_id
             thread_action = "new"
         

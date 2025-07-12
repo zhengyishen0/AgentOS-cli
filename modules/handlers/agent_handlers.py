@@ -58,7 +58,7 @@ Keep plans focused and efficient. Use parallel execution where possible.
     thread = await thread_manager.get_thread(input_data.thread_id)
     
     # Format thread context for the LLM
-    thread_context = f"Thread {thread.thread_id}: {thread.summary}"
+    thread_context = f"Thread [{thread.thread_id}] {thread.title}: {thread.summary}"
     if len(thread.events) > 0:
         thread_context += f"\nEvents: {len(thread.events)}"
 

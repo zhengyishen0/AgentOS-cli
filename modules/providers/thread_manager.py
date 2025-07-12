@@ -27,39 +27,24 @@ class ThreadManager:
         self._storage = ThreadStorage(storage_path=storage_path)
         self._lock = asyncio.Lock()
     
-    async def create_thread(self, thread_id: Optional[str] = None, summary: Optional[str] = None) -> Thread:
+    async def create_thread(self, thread_id: Optional[str] = None) -> Thread:
         """Create a new thread.
         
         Args:
             thread_id: Optional unique identifier. Auto-generated if not provided.
-            summary: Optional thread summary. Auto-generated if not provided.
+            title: Optional thread title. Auto-generated if not provided.
             
         Returns:
             Created Thread object
         """
-        async with self._lock:
-            # Generate thread_id if not provided
-            if not thread_id:
-                short_uuid = uuid.uuid4().hex[:6]
-                thread_id = f"thread_{short_uuid}"
-            
-            # Generate summary if not provided
-            summary = "New Thread" if not summary else summary
-            
-            # Check uniqueness
-            if await self._storage.exists(thread_id):
-                raise ValueError(f"Thread {thread_id} already exists")
-            
-            thread = Thread(
-                thread_id=thread_id,
-                summary=summary
-            )
+        async with self._lock:    
+            thread = Thread(thread_id) if thread_id else Thread()
             
             # Add creation event
             creation_event = Event(
                 name="thread.created",
-                data={"thread_id": thread_id, "summary": summary},
-                result={"thread_id": thread_id, "summary": summary},
+                data={"thread_id": thread.thread_id, "title": thread.title},
+                result={"thread_id": thread.thread_id, "title": thread.title},
                 status="completed",
                 source="thread_manager"
             )
@@ -67,9 +52,9 @@ class ThreadManager:
             thread.add_event(creation_event)
             
             # Save to storage
-            await self._storage.save(thread_id, thread.model_dump(mode='json'))
+            await self._storage.save(thread.thread_id, thread.model_dump(mode='json'))
             
-            logger.info(f"Created thread {thread_id}")
+            logger.info(f"Created thread {thread.thread_id}")
             return thread
     
     async def get_thread(self, thread_id: str) -> Optional[Thread]:

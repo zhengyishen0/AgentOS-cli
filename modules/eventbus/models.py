@@ -35,8 +35,9 @@ class ExecutionResult(BaseModel):
 class Thread(BaseModel):
     """Thread containing conversation context and event history."""
     
-    thread_id: str = Field(description="Unique thread identifier")
-    summary: str = Field(description="Thread summary")
+    thread_id: str = Field(default_factory=lambda: f"thread_{uuid4().hex[:6]}", description="Unique thread identifier")
+    title: str = Field(default="New Thread", description="Thread title")
+    summary: str = Field(default="New Thread", description="Thread summary")
     status: str = Field(default="active", description="Thread status: active, archived")
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     updated_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
@@ -52,12 +53,10 @@ class Thread(BaseModel):
         """Get thread context for event execution."""
         context = {
             'thread_id': self.thread_id,
-            'summary': self.summary,
             'metadata': self.metadata,
             'thread': {
                 self.thread_id: {
                     'events': [event.model_dump() for event in self.events],
-                    'summary': self.summary,
                     'metadata': self.metadata
                 }
             }

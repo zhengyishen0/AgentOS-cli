@@ -192,13 +192,13 @@ class ThreadSummarizeInput(BaseModel):
 class ThreadCreateInput(BaseModel):
     """Input schema for thread.create event.
     
-    This event creates a new conversation thread with optional initial summary and metadata.
+    This event creates a new conversation thread with optional initial title and metadata.
     New threads provide a clean context for new conversations or task sequences.
     
     Expected behavior: Creates a new thread in the system with the provided metadata
-    and optional summary, returning a unique thread identifier for future reference.
+    and optional title, returning a unique thread identifier for future reference.
     """
-    summary: Optional[str] = Field(default=None, description="Optional initial summary")
+    title: Optional[str] = Field(default=None, description="Optional initial title")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Thread metadata")
 
     class Config:
