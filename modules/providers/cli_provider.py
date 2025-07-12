@@ -8,8 +8,6 @@ import asyncio
 import logging
 from typing import Dict, Any, Optional, List
 from datetime import datetime, timezone
-from modules import eventbus
-from modules.providers.thread_manager import ThreadManager
 
 logger = logging.getLogger(__name__)
 
@@ -17,13 +15,14 @@ logger = logging.getLogger(__name__)
 class CLIProvider:
     """CLI provider for handling user interactions and event publishing."""
     
-    def __init__(self, event_bus=None):
+    def __init__(self, event_bus=None, thread_manager=None):
         """Initialize the CLI provider.
         
         Args:
             event_bus: Event bus instance to use for publishing events
         """
-        self.event_bus = event_bus or eventbus
+        self.event_bus = event_bus
+        self._thread_manager = thread_manager
         self.session_id = None
         self._running = False
         
@@ -33,8 +32,7 @@ class CLIProvider:
         self._current_thread_id: Optional[str] = None
         self._threads_loaded = False
         
-        # Create thread manager instance
-        self._thread_manager = ThreadManager()
+        
     
     async def _load_threads_cache(self) -> None:
         """Load all threads into memory cache for navigation."""
@@ -184,49 +182,44 @@ class CLIProvider:
                 return
             
             # Display the 10 latest events in chronological order
-            recent_events = thread.events[-10:] if len(thread.events) > 10 else thread.events
-            event_counter = 1
+            filtered_events = [x for x in thread.events if x.name not in ("thread.created")]
+            sorted_events = sorted(filtered_events, key=lambda x: x.timestamp)
+            recent_events = sorted_events[-10:] if len(sorted_events) > 10 else sorted_events
             for event in recent_events:
                 timestamp = event.timestamp.strftime("%H:%M:%S") if hasattr(event.timestamp, 'strftime') else str(event.timestamp)
                 
                 # Format different event types
                 if event.name == "user.input":
-                    self.display_output(f"{event_counter}. [{timestamp}] 👤 User: {event.data.get('input', '')}", "user")
-                    event_counter += 1
+                    self.display_output(event.data.get('input', ''), "user", timestamp)
                 elif event.name == "thread.match":
                     # Show user input from thread.match events
                     user_input = event.data.get('input', '')
                     if user_input:
-                        self.display_output(f"{event_counter}. [{timestamp}] 👤 User: {user_input}", "user")
-                        event_counter += 1
+                        self.display_output(user_input, "user", timestamp)
                     # Also show thread action if available (but don't increment counter)
-                    if event.result and 'action' in event.result:
-                        action = event.result['action']
-                        if action == "new":
-                            self.display_output(f"   [{timestamp}] 🆕 New thread created", "info")
-                        elif action == "switch":
-                            self.display_output(f"   [{timestamp}] 🔄 Switched to existing thread", "info")
-                        elif action == "continue":
-                            self.display_output(f"   [{timestamp}] ➡️ Continued in thread", "info")
+                    # if event.result and 'action' in event.result:
+                    #     action = event.result['action']
+                    #     if action == "new":
+                    #         self.display_output(f"[{timestamp}] 🆕 New thread created", "thread")
+                    #     elif action == "switch":
+                    #         self.display_output(f"[{timestamp}] 🔄 Switched to existing thread", "thread")
+                    #     elif action == "continue":
+                    #         self.display_output(f"[{timestamp}] ➡️ Continued in thread", "thread")
                 elif event.name == "agent.reply":
                     message = event.data.get('message', '')
-                    self.display_output(f"{event_counter}. [{timestamp}] 🤖 Agent: {message}", "agent")
-                    event_counter += 1
+                    self.display_output(message, "agent", timestamp)
                 elif event.name == "agent.think":
-                    # Only show agent thinking if it has a meaningful result
                     if event.result and 'message' in event.result and event.result.get('event') == 'agent.reply':
-                        # Skip showing the thinking process since we show the reply
                         continue
                     elif event.result and 'message' in event.result:
-                        self.display_output(f"{event_counter}. [{timestamp}] 🤔 Agent thinking: {event.result['message']}", "debug")
-                        event_counter += 1
+                        self.display_output(event.result['message'], "debug", timestamp)
+                elif event.name == "agent.chain":
+                    self.display_output(event.result['message'], "chain", timestamp)
                 elif event.name == "thread.created":
-                    self.display_output(f"{event_counter}. [{timestamp}] 🧵 Thread created", "info")
-                    event_counter += 1
+                    self.display_output("Thread created", "thread", timestamp)
                 else:
                     # Generic event display for other events
-                    self.display_output(f"{event_counter}. [{timestamp}] {event.name}: {event.data}", "debug")
-                    event_counter += 1
+                    self.display_output(event.data, "debug", timestamp)
             
             print("-" * 60)
             if len(thread.events) > 10:
@@ -252,12 +245,13 @@ class CLIProvider:
         except (EOFError, KeyboardInterrupt):
             return "exit"
     
-    def display_output(self, message: str, level: str = "info") -> None:
+    def display_output(self, message: str, level: str = "info", timestamp: str = None) -> None:
         """Display output to the user.
         
         Args:
             message: Message to display
-            level: Output level (info, warning, error, success)
+            level: info | warning | error | success | debug | agent | user | thread
+            timestamp: Timestamp to display
         """
         level_icons = {
             "info": "ℹ️",
@@ -267,10 +261,13 @@ class CLIProvider:
             "debug": "🐛",
             "agent": "🤖",
             "user": "👨",
+            "thread": "🧵",
+            "chain": "🔗",
         }
         
         icon = level_icons.get(level, "ℹ️")
-        print(f"{icon} {message}")
+        leader = level.capitalize()
+        print(f"[{timestamp}] {icon} {leader}: {message}")
     
     def display_result(self, result: Dict[str, Any]) -> None:
         """Display event chain result in a formatted way.

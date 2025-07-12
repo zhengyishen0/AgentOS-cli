@@ -10,7 +10,7 @@ class Event(BaseModel):
     """Unified event model for the entire system with full lifecycle tracking."""
     
     event_id: str = Field(default_factory=lambda: str(uuid4()))
-    thread_id: Optional[str] = Field(default=None, description="Thread identifier")
+    thread_id: str = Field(default="new_thread", description="Thread identifier")
     name: str = Field(description="Event name (e.g., 'user.login')")
     data: Dict[str, Any] = Field(description="Event data payload")
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

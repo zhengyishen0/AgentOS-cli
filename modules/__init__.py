@@ -10,9 +10,9 @@ from .providers.thread_manager import ThreadManager
 from .eventbus.event_chain import EventChainExecutor
 
 # Create global instances
-eventbus = ConcurrentEventBus(persistence_enabled=True)
-cli_provider = CLIProvider(eventbus)
 thread_manager = ThreadManager()
+eventbus = ConcurrentEventBus(persistence_enabled=True)
+cli_provider = CLIProvider(eventbus, thread_manager)
 executor = EventChainExecutor(eventbus, thread_manager)
 
 # Export them for easy access
