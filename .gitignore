@@ -155,5 +155,8 @@ logs/
 *.db
 *.sqlite
 
+# CLI user history (personal, should not be committed)
+modules/cli/command_history.txt
+
 .pytest_cache/
 .claude/

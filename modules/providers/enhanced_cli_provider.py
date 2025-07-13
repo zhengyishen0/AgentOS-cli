@@ -30,7 +30,7 @@ app = typer.Typer(
 console = Console()
 
 
-class AgentOSSlashCommand:
+class SlashCommand:
     """Enhanced slash command system for AgentOS with Click style decorators"""
 
     def __init__(self):
@@ -93,7 +93,7 @@ class AgentOSSlashCommand:
 
     def create_dynamic_completer(self, cli_provider) -> Completer:
         """Create a smarter completer that shows on '/' press with thread awareness"""
-        class AgentOSCompleter(Completer):
+        class Completer(Completer):
             def __init__(self, command_registry, cli_provider):
                 self.registry = command_registry
                 self.cli_provider = cli_provider
@@ -131,7 +131,7 @@ class AgentOSSlashCommand:
                                     info['help']) > 50 else info['help']
                             )
 
-        return AgentOSCompleter(self, cli_provider)
+        return Completer(self, cli_provider)
 
     def execute(self, cli_instance, command_line: str):
         """Execute a slash command"""
@@ -148,7 +148,7 @@ class AgentOSSlashCommand:
 
 
 # Create global slash command registry
-slash = AgentOSSlashCommand()
+slash = SlashCommand()
 
 
 class EnhancedCLIProvider:
