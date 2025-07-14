@@ -49,19 +49,6 @@ class TaskListInput(BaseModel):
     filter: Dict[str, Any] = Field(default_factory=dict, description="Filter parameters")
     status: str = Field(default="all", description="Status filter: 'all', 'pending', 'completed', 'failed'")
 
-class AgentReplyInput(BaseModel):
-    """Input schema for agent.reply event.
-    
-    This event allows the agent to send a direct response or notification to the user.
-    The reply can include different levels of urgency and optional titles for better UX.
-    
-    Expected behavior: Delivers a message to the user interface with appropriate
-    styling based on the notification level (agent,info, warning, error, etc.).
-    """
-    thread_id: str = Field(description="The thread context identifier")
-    message: str = Field(description="Notification message")
-    level: str = Field(default="agent", description="Notification level")
-
 
 # Agent Event Schemas
 class AgentChainInput(BaseModel):
@@ -128,8 +115,10 @@ class AgentThreadInput(BaseModel):
 # Agent Output Schemas
 class AgentThinkOutput(BaseModel):
     """Output schema for agent.think event."""
-    event: Literal["agent.reply", "agent.chain"] = Field(description="Next event to trigger")
-    message: str = Field(description="The message to think about")
+    event: Literal["reply", "chain", "ask"] = Field(description="Action to take: reply directly, chain, or ask user")
+    message: str = Field(description="The message to display or plan to execute")
+    context: str = Field(default="Read the thread", description="Context summary of what happened and current state")
+    options: Optional[List[str]] = Field(default=None, description="Options for user to choose from (only for ask)")
 
 
 class ChainEvent(BaseModel):

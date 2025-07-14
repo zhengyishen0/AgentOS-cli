@@ -26,6 +26,18 @@ from .commands import register_all_commands
 
 logger = logging.getLogger(__name__)
 
+# Global CLI provider instance for handlers to access
+_global_cli_provider = None
+
+def get_global_cli_provider():
+    """Get the global CLI provider instance."""
+    return _global_cli_provider
+
+def set_global_cli_provider(cli_provider):
+    """Set the global CLI provider instance."""
+    global _global_cli_provider
+    _global_cli_provider = cli_provider
+
 
 class EnhancedCLIProvider:
     """Enhanced CLI Provider with clean architecture and modular commands"""
@@ -37,6 +49,9 @@ class EnhancedCLIProvider:
         self.thread_manager: ThreadManager = thread_manager
         self.session_id: Optional[str] = None
         self._running: bool = False
+        
+        # Set this instance as the global CLI provider
+        set_global_cli_provider(self)
         
         # Thread navigation state
         self._threads_cache: List[Thread] = []
@@ -497,6 +512,14 @@ class EnhancedCLIProvider:
                             else:
                                 # Generic child event display
                                 self.console.print(f"{prefix}[dim][{child_timestamp}][/dim] [white]📊 {child_event.name}:[/white] {child_event.data}")
+                elif event.name == "user.choice":
+                    choice = event.data.get('choice', '')
+                    options = event.data.get('options', [])
+                    context = event.data.get('context', '')
+                    if context:
+                        self.console.print(f"[dim][{timestamp}][/dim] [blue]👤 User chose:[/blue] {choice} (from {', '.join(options)}) [dim]Context: {context}[/dim]")
+                    else:
+                        self.console.print(f"[dim][{timestamp}][/dim] [blue]👤 User chose:[/blue] {choice} (from {', '.join(options)})")
                 elif event.name == "thread.created":
                     self.console.print(f"[dim][{timestamp}][/dim] [cyan]🧵 Thread created[/cyan]")
                 else:
@@ -559,6 +582,94 @@ class EnhancedCLIProvider:
             prompt_text = f"\n{clean_title}\n> "
             return input(prompt_text).strip()
 
+    async def get_user_choice(self, message: str, options: List[str]) -> str:
+        """Get user choice from a list of options using arrow keys.
+        
+        Args:
+            message: Message to display to user
+            options: List of options to choose from
+            
+        Returns:
+            Selected option string
+        """
+        # Clear any existing status indicators first
+        self.console.clear()
+        
+        self.console.print(f"\n[green]🤖 Agent:[/green] {message}")
+        
+        # Create key bindings for arrow key navigation
+        kb = KeyBindings()
+        selected_index = [0]  # Use list to make it mutable in closures
+        
+        @kb.add('up')
+        def _(event):
+            selected_index[0] = max(0, selected_index[0] - 1)
+            # Force a complete redraw
+            event.app.renderer.clear()
+            event.app.invalidate()
+        
+        @kb.add('down')
+        def _(event):
+            selected_index[0] = min(len(options) - 1, selected_index[0] + 1)
+            # Force a complete redraw
+            event.app.renderer.clear()
+            event.app.invalidate()
+        
+        @kb.add('enter')
+        def _(event):
+            event.app.exit(result=options[selected_index[0]])
+        
+        @kb.add('escape')
+        def _(event):
+            event.app.exit(result="exit")
+        
+        # Create formatted text for display with dynamic content
+        def get_formatted_options():
+            formatted_options = []
+            for i, option in enumerate(options):
+                if i == selected_index[0]:
+                    # Selected option - highlight it
+                    formatted_options.append(('class:selected', f"  ▶ {option}\n"))
+                else:
+                    # Unselected option
+                    formatted_options.append(('class:normal', f"    {option}\n"))
+            return formatted_options
+        
+        # Display instructions
+        self.console.print("\n[dim]Use ↑/↓ arrow keys to navigate, Enter to select, Esc to cancel:[/dim]")
+        
+        try:
+            # Go back to PromptSession but with better positioning
+            from prompt_toolkit import PromptSession
+            from prompt_toolkit.formatted_text import FormattedText
+            from prompt_toolkit.patch_stdout import patch_stdout
+            
+            # Create a dynamic prompt that updates the content
+            def get_dynamic_prompt():
+                return FormattedText(get_formatted_options())
+            
+            prompt_session = PromptSession(
+                message=get_dynamic_prompt,
+                key_bindings=kb,
+                style=self._get_choice_style(),
+                refresh_interval=0.1,  # Refresh every 100ms
+            )
+            
+            # Get user selection using async prompt
+            with patch_stdout():
+                result = await prompt_session.prompt_async()
+            return result
+        except (EOFError, KeyboardInterrupt):
+            return "exit"
+    
+    def _get_choice_style(self):
+        """Get the style for choice selection."""
+        from prompt_toolkit.styles import Style
+        return Style.from_dict({
+            'selected': 'bg:#ansicyan #ansiwhite bold',
+            'normal': '#ansiwhite',
+        })
+
     async def publish_event(self, name: str, data: Dict[str, Any], source: str = "cli") -> Dict[str, Any]:
         """Publish an event to the event bus."""
         try:
@@ -577,8 +688,7 @@ class EnhancedCLIProvider:
         
         # Publish user.input → thread.match → agent.think
         data = {"input": input, "thread_id": thread_id}
-        with self.console.status("[yellow]Processing...[/yellow]"):
-            await self.publish_event("thread.match", data)
+        await self.publish_event("thread.match", data)
 
     async def run_interactive(self) -> None:
         """Run the enhanced interactive CLI session."""

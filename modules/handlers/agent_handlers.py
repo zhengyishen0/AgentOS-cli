@@ -7,9 +7,10 @@ from typing import Dict, Any
 from modules.eventbus.models import Event
 from modules.eventbus.schemas import (
     AgentChainInput, AgentChainOutput, AgentThinkInput, AgentThinkOutput, 
-    AgentDecideInput, AgentReplyInput, AgentThreadInput, AgentThreadOutput
+    AgentDecideInput, AgentThreadInput, AgentThreadOutput
 )
-from modules import eventbus, thread_manager, executor, cli_provider
+from modules import eventbus, thread_manager, executor
+from modules.cli.provider import get_global_cli_provider
 from pprint import pprint
 
 
@@ -23,7 +24,8 @@ async def agent_think(event: Event) -> Dict[str, Any]:
     
     This handler performs high-level reasoning and planning, deciding whether to:
     1. Reply directly to the user (for simple requests)
-    2. Create a detailed plan for complex multi-step operations
+    2. Ask the user to choose from options (for decisions requiring user input)
+    3. Create a detailed plan for complex multi-step operations (chain)
     """
 
     # Validate input data
@@ -35,10 +37,13 @@ async def agent_think(event: Event) -> Dict[str, Any]:
     
     if thread is None:
         logger.error(f"Thread {input_data.thread_id} not found")
+        cli_provider = get_global_cli_provider()
+        if cli_provider:
+            cli_provider.console.print(f"[red]Error: Thread {input_data.thread_id} not found. Please try again.[/red]")
         return {
-            "event": "agent.reply",
+            "event": "reply",
             "message": f"Error: Thread {input_data.thread_id} not found. Please try again."
-        }
+        } 
 
     thread_context = f"Thread [{thread.thread_id}] {thread.title}: {thread.summary}"
     if len(thread.events) > 0:
@@ -60,15 +65,74 @@ async def agent_think(event: Event) -> Dict[str, Any]:
     pprint(output)
     print('\n\n')
 
-    data = {
-        "thread_id": input_data.thread_id,
-        "message": output['message']
-    }
+    # Handle different action types internally
+    cli_provider = get_global_cli_provider()
     
-    print(f"data: {data}")
-    await eventbus.publish(output['event'], data)
-
-    return output
+    if output['event'] == 'reply':
+        # Direct reply - display immediately
+        if cli_provider:
+            cli_provider.console.print(f"[green]🤖 Agent:[/green] {output['message']}")
+        return output
+    elif output['event'] == 'ask':
+        # Ask user for choice
+        if cli_provider and output.get('options'):
+            user_choice = await cli_provider.get_user_choice(output['message'], output['options'])
+            if user_choice == "exit":
+                cli_provider.console.print("[yellow]Operation cancelled by user[/yellow]")
+                return {"event": "reply", "message": "Operation cancelled by user"}
+            else:
+                # Continue with the chosen option - trigger another agent.think with the choice
+                cli_provider.console.print(f"[cyan]You chose: {user_choice}[/cyan]")
+                
+                # Create a user choice event and add it to the thread
+                user_choice_event = Event(
+                    name="user.choice",
+                    data={
+                        "thread_id": input_data.thread_id,
+                        "choice": user_choice,
+                        "options": output.get('options', []),
+                        "context": output.get('context', '')
+                    },
+                    result={"choice": user_choice},
+                    status="completed",
+                    source="cli"
+                )
+                
+                # Add the user choice event to the thread
+                await thread_manager.add_event_to_thread(input_data.thread_id, user_choice_event)
+                
+                # Create a new prompt that includes the user's choice and original context
+                original_context = output.get('context', '')
+                if original_context:
+                    choice_prompt = f"User selected: {user_choice}. Context: {original_context}. Please continue with this choice."
+                else:
+                    choice_prompt = f"User selected: {user_choice}. Please continue with this choice."
+                
+                # Trigger another agent.think event with the choice context
+                await eventbus.publish("agent.think", {
+                    "thread_id": input_data.thread_id,
+                    "prompt": choice_prompt
+                })
+                
+                return {"event": "reply", "message": f"Processing your choice: {user_choice}"}
+        else:
+            # Fallback if no options provided
+            if cli_provider:
+                cli_provider.console.print(f"[green]🤖 Agent:[/green] {output['message']}")
+            return {"event": "reply", "message": output['message']}
+    elif output['event'] == 'chain':
+        # Chain execution - publish the chain event
+        data = {
+            "thread_id": input_data.thread_id,
+            "message": output['message']
+        }
+        await eventbus.publish("agent.chain", data)
+        return output
+    else:
+        # Unknown event type - fallback to reply
+        if cli_provider:
+            cli_provider.console.print(f"[green]🤖 Agent:[/green] {output['message']}")
+        return {"event": "reply", "message": output['message']}
 
 
 @eventbus.register("agent.chain", schema=AgentChainInput)
@@ -189,11 +253,7 @@ async def agent_thread(event: Event) -> Dict[str, Any]:
     return output.model_dump()
 
 
-@eventbus.register("agent.reply", schema=AgentReplyInput)
-async def agent_reply(event: Event) -> None:
-    """Send a reply to the user"""
-    input_data = AgentReplyInput(**event.data)
-    cli_provider.display_output(input_data.message, "agent")
+
 
 
 # Helper functions
@@ -250,23 +310,65 @@ You are a strategic planning AI agent. Your role is to analyze user requests and
 
 RESPONSE FORMAT:
 You must respond with a JSON object containing exactly these fields:
-- "event": Either "agent.reply" or "agent.chain"
+- "event": Either "reply", "chain", or "ask"
 - "message": A string containing your response
+- "context": String containing a summary of what happened and current state (MANDATORY)
+- "options": Array of strings (only required for "ask")
 
 For SIMPLE requests that can be answered directly:
-- Return: {{"event": "agent.reply", "message": "your direct answer here"}}
+- Return: {{"event": "reply", "message": "your direct answer here", "context": "summary_of_what_happened"}}
 
 For COMPLEX requests requiring multiple steps:
-- Return: {{"event": "agent.chain", "message": "step-by-step pseudocode plan"}}
+- Return: {{"event": "chain", "message": "step-by-step pseudocode plan", "context": "summary_of_what_happened"}}
+
+For CHOICES requiring user input:
+- Return: {{"event": "ask", "message": "question for user", "options": ["option1", "option2", "option3"], "context": "summary_of_what_happened"}}
 
 Available event schemas:
 {json.dumps(registered_schemas, indent=2)}
 
 IMPORTANT RULES:
-- Always return valid JSON with exactly "event" and "message" fields
+- Always return valid JSON with exactly "event", "message", and "context" fields
 - The "message" field must be a string, not an object
-- For agent.chain, provide clear step-by-step pseudocode that can be mechanically translated
+- The "context" field is MANDATORY for all responses
+- For "ask", include "options" array with 2-5 clear choices
+- For "chain", provide clear step-by-step pseudocode that can be mechanically translated
 - Keep plans focused and efficient
+
+CONTEXT FIELD (MANDATORY FOR ALL RESPONSES):
+The "context" field should contain a structured summary with these sections:
+- "Background: what happened before"
+- "User: what user said in the input" 
+- "Response: what the LLM did/said"
+- "Next: what we should do next"
+
+Examples:
+- "Background: First interaction. User: Asked about the weather. Response: Provided current conditions. Next: Conversation complete."
+- "Background: New conversation. User: Wanted to play a number guessing game. Response: Chose number 7 as the answer and asked them to guess from 3, 7, 9. Next: Wait for user's guess and check if they picked 7."
+- "Background: We've been playing a number guessing game, user has guessed 3 times. User: Selected option 7 from the choices. Response: Confirmed they guessed correctly (answer was 7). Next: Continue the number-guess game and ask if they want to play again."
+- "Background: User requested data analysis. User: Asked for project approach options. Response: Provided quick, thorough, and balanced choices. User selected 'thorough' approach. Next: Proceed with detailed planning using the thorough approach."
+
+CRITICAL RULES:
+1. ALWAYS follow the exact format: "Background: ... User: ... Response: ... Next: ..."
+2. Keep each section clear and separate
+3. Make the Next section specific and actionable
+4. Don't mix information between sections
+
+Use this structured format to provide clear context for the next call.
+
+ALWAYS USE "ask" WHEN:
+- Presenting multiple options for user to choose from
+- Playing games where user needs to pick from choices
+- Asking user to select from a list of alternatives
+- Requiring user confirmation or preference
+- Any scenario where user must make a selection
+
+Examples of when to use "ask":
+- "Choose your preferred option: A, B, or C"
+- "Pick a number from these options: 1, 2, 3"
+- "Which approach would you like: quick, thorough, or balanced?"
+- "Select your favorite color: red, blue, green"
+- Games requiring user choice or selection
 
 Examples of complex requests:
 - Tasks involving multiple data sources
@@ -308,7 +410,6 @@ IMPORTANT RULES:
 - No reasoning or interpretation - just mechanical translation
 - Use exact event names and parameter structures from schemas
 - Always use "thread_id": "current" for thread context
-- For agent.reply events, use {{event_name.result.message}} to get the message string
 - Group independent tasks in parallel arrays: [[event1, event2], event3]
 - Always end chains with agent.think
 
@@ -317,8 +418,7 @@ EXAMPLES:
 Simple chain:
 {{
   "chain": [
-    {{"name": "agent.think", "data": {{"thread_id": "current", "prompt": "say hello"}}}},
-    {{"name": "agent.reply", "data": {{"thread_id": "current", "message": "{{agent.think.result.message}}"}}}}
+    {{"name": "agent.think", "data": {{"thread_id": "current", "prompt": "say hello"}}}}
   ]
 }}
 

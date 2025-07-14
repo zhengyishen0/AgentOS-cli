@@ -17,6 +17,42 @@ def register_system_commands(registry):
         click.secho("👋 Goodbye!", fg='green')
         return False
 
+    @registry.command("/reload", help="Reload event handlers only", category="System")
+    def reload_command(cli, args):
+        """Reload only the event handlers without affecting other state"""
+        click.secho("🔄 Reloading event handlers...", fg='yellow')
+        
+        # Reload all event handlers
+        async def reload_event_handlers():
+            try:
+                # Re-import all handler modules to re-register events
+                import importlib
+                import modules.handlers.agent_handlers
+                import modules.handlers.thread_handlers
+                import modules.handlers.memory_handlers
+                import modules.handlers.task_handlers
+                import modules.handlers.system_handlers
+                
+                # Reload the modules to re-register handlers
+                importlib.reload(modules.handlers.agent_handlers)
+                importlib.reload(modules.handlers.thread_handlers)
+                importlib.reload(modules.handlers.memory_handlers)
+                importlib.reload(modules.handlers.task_handlers)
+                importlib.reload(modules.handlers.system_handlers)
+                
+                # Get updated event count
+                if cli.event_bus and hasattr(cli.event_bus, 'list_events'):
+                    registered_events = cli.event_bus.list_events()
+                    click.secho(f"✅ Reloaded {len(registered_events)} event handlers", fg='green')
+                
+            except Exception as e:
+                click.secho(f"❌ Error reloading event handlers: {e}", fg='red')
+        
+        # Schedule event handler reload for next iteration
+        cli._pending_coroutine = reload_event_handlers()
+        
+        return True
+
     @registry.command(help="Show available commands", category="Help")
     def help(cli, args):
         """Display all available slash commands"""

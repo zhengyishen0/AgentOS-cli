@@ -3,7 +3,7 @@
 import pytest
 import asyncio
 from unittest.mock import Mock, patch, AsyncMock
-from modules.providers.cli_provider import CLIProvider
+from modules.providers.deprecate_cli_provider import CLIProvider
 from modules import eventbus
 
 
