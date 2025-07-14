@@ -32,6 +32,13 @@ async def agent_think(event: Event) -> Dict[str, Any]:
 
     # Get thread context for full conversation history
     thread = await thread_manager.get_thread(input_data.thread_id)
+    
+    if thread is None:
+        logger.error(f"Thread {input_data.thread_id} not found")
+        return {
+            "event": "agent.reply",
+            "message": f"Error: Thread {input_data.thread_id} not found. Please try again."
+        }
 
     thread_context = f"Thread [{thread.thread_id}] {thread.title}: {thread.summary}"
     if len(thread.events) > 0:
@@ -88,7 +95,7 @@ async def agent_chain(event: Event) -> Dict[str, Any]:
 
     data = response.choices[0].message.content
     chain = json.loads(data).get('chain', [])
-    chain_events = convert_chain_to_events(chain)
+    chain_events = _convert_chain_to_events(chain)
 
     print('\nagent.chain output:')
     pprint(chain_events)
@@ -103,7 +110,7 @@ async def agent_chain(event: Event) -> Dict[str, Any]:
     # Return the execution result
     return {
         'success': execution_result.success,
-        'events': [e.model_dump() for e in execution_result.events],
+        'events': [e.model_dump(mode='json') for e in execution_result.events],
         'total_execution_time_ms': execution_result.total_execution_time_ms,
         'error': execution_result.error,
         'chain_definition': chain  # Include original chain for reference
@@ -122,11 +129,17 @@ async def agent_decide(event: Event) -> Dict[str, Any]:
 
     # Validate input data
     input_data = AgentDecideInput(**event.data)
-    thread = await thread_manager.get_thread(input_data.thread_id)
+    
+    # Validate all dependencies and return them or an error response
+    result = await _validate_and_get_dependencies(input_data)
+    if "action" in result:  # Error case
+        return result
+    
+    thread, event_schema = result["thread"], result["event_schema"]
 
     message_content = f"""
 TASK: {input_data.prompt}
-- Event Schema: {input_data.event_schema}
+- Event Schema: {json.dumps(event_schema.model_json_schema(), indent=2)}
 - Current Parameters: {input_data.params}
 - Thread Context: {thread}
 """
@@ -183,9 +196,9 @@ async def agent_reply(event: Event) -> None:
     cli_provider.display_output(input_data.message, "agent")
 
 
+# Helper functions
 
-# Convert chain to proper Event objects, handling nested lists for parallel execution
-def convert_chain_to_events(chain_items):
+def _convert_chain_to_events(chain_items):
     """Recursively convert chain items to Event objects, preserving nested list structure."""
     converted_chain = []
     for item in chain_items:
@@ -198,90 +211,132 @@ def convert_chain_to_events(chain_items):
             converted_chain.append(Event(**item))
     return converted_chain
 
+async def _validate_and_get_dependencies(input_data: AgentDecideInput) -> Dict[str, Any]:
+    """Validate all dependencies and return them or an error response.
+    
+    Returns:
+        Either an error dict with "action", "params", "reason" keys,
+        or a success dict with "thread" and "event_schema" keys.
+    """
+    # Check thread
+    thread = await thread_manager.get_thread(input_data.thread_id)
+    if thread is None:
+        logger.error(f"agent.decide: Thread {input_data.thread_id} not found")
+        return {
+            "action": "skip",
+            "params": input_data.params,
+            "reason": f"Thread {input_data.thread_id} not found"
+        }
+    
+    # Check event schema
+    event_schema = eventbus.get_schema(input_data.event_name)
+    if event_schema is None:
+        logger.error(f"agent.decide: Event schema {input_data.event_name} not found")
+        return {
+            "action": "skip",
+            "params": input_data.params,
+            "reason": f"Event schema {input_data.event_name} not found"
+        }
+    
+    # Success case - return the dependencies
+    return {"thread": thread, "event_schema": event_schema}
 
+
+# Agent instructions
 
 def agent_think_instruction(registered_schemas: Dict[str, Any]) -> str:
     return f"""
 You are a strategic planning AI agent. Your role is to analyze user requests and decide the best approach.
 
+RESPONSE FORMAT:
+You must respond with a JSON object containing exactly these fields:
+- "event": Either "agent.reply" or "agent.chain"
+- "message": A string containing your response
+
 For SIMPLE requests that can be answered directly:
-- Return: {{"event": "agent.reply", "message": {{"your direct answer"}}}}
+- Return: {{"event": "agent.reply", "message": "your direct answer here"}}
 
 For COMPLEX requests requiring multiple steps:
-- Return: {{"event": "agent.chain", "message": {{"pseudocode plan in bullet points"}}}}
+- Return: {{"event": "agent.chain", "message": "step-by-step pseudocode plan"}}
 
-We have a list of tools you can use. This is their schemas:
+Available event schemas:
 {json.dumps(registered_schemas, indent=2)}
 
-IMPORTANT:
-- The plan should be clear, step-by-step pseudocode that can be mechanically translated into events.
+IMPORTANT RULES:
+- Always return valid JSON with exactly "event" and "message" fields
+- The "message" field must be a string, not an object
+- For agent.chain, provide clear step-by-step pseudocode that can be mechanically translated
+- Keep plans focused and efficient
 
 Examples of complex requests:
 - Tasks involving multiple data sources
 - Multi-step calculations or transformations  
 - Operations requiring coordination between teams/systems
 - Time-based scheduling or planning
-
-Keep plans focused and efficient. Use parallel execution where possible.
 """
-
 
 def agent_chain_instruction(registered_schemas: Dict[str, Any]) -> str:
     return f"""
 You are a mechanical translation AI that converts plans into event chains. You have full knowledge of available events and their schemas.
 
+RESPONSE FORMAT:
+You must respond with a JSON object containing exactly this field:
+- "chain": An array of events or parallel event arrays
+
 Your task is to:
 1. Parse the pseudocode plan
 2. Map each step to appropriate events
-3. Use parameter interpolation for data flow ({{event.result}} syntax)
+3. Use parameter interpolation for data flow
 4. Group parallel operations in arrays
 5. Always append agent.think at the end
 
-Registered tools you can use and their schemas:
+Available event schemas:
 {json.dumps(registered_schemas, indent=2)}
 
-Output format: List(Union[Event, List[Event]])
-Event: {{"name": "event_name", "data": {{"param": "value"}}, "source": "event_source"}},
-Sequential Events: [Event, Event, ...]
-Parallel Events: [[Event, Event, ...], [Event, Event, ...], ...]
+EVENT FORMAT:
+Each event must have exactly these fields:
+- "name": The event name (e.g., "agent.think", "agent.reply")
+- "data": Object containing event parameters
+
+PARAMETER INTERPOLATION:
+Use these patterns to reference previous event results:
+- {{event_name.result}} - full result object
+- {{event_name.result.message}} - specific field from result
+- {{event_name.result[0]}} - array access
 
 IMPORTANT RULES:
 - No reasoning or interpretation - just mechanical translation
-- Use exact event names and parameter structures
-- Preserve the plan's intent without optimization
-- Support these interpolation patterns:
-  - {{event_name.result}} - full result
-  - {{event_name.result.field}} - specific field
-  - {{event_name.result[0]}} - array access
-- You would make tasks parallel if you see multiple tasks in the plan, such as read 10 given url links, or any task that do not depend on each other
-- Make sure you use the result from the previous event in the next event if needed
+- Use exact event names and parameter structures from schemas
+- Always use "thread_id": "current" for thread context
+- For agent.reply events, use {{event_name.result.message}} to get the message string
+- Group independent tasks in parallel arrays: [[event1, event2], event3]
+- Always end chains with agent.think
 
-Example translation:
-Plan: "1. Get current date\\n2. Add 7 days\\n3. Format as ISO string"
-Chain: [
-  {{"name": "tools.now", "data": {{}}}},
-  {{"name": "tools.date_calc", "data": {{"from": "{{tools.now.result}}", "add": "7 days"}}}},
-  {{"name": "tools.format", "data": {{"date": "{{tools.date_calc.result}}", "format": "ISO"}}}},
-  {{"name": "agent.think", "data": {{"thread_id": "current"}}}}
-]
+EXAMPLES:
 
-For parallel operations:
-Plan: "Get both marketing and engineering team members"  
-Chain: [
-  [
-    {{"name": "team.members", "data": {{"team": "marketing"}}}},
-    {{"name": "team.members", "data": {{"team": "engineering"}}}}
-  ],
-  {{"name": "agent.think", "data": {{"thread_id": "current"}}}}
-]
+Simple chain:
+{{
+  "chain": [
+    {{"name": "agent.think", "data": {{"thread_id": "current", "prompt": "say hello"}}}},
+    {{"name": "agent.reply", "data": {{"thread_id": "current", "message": "{{agent.think.result.message}}"}}}}
+  ]
+}}
 
-Example json format output:
+Chain with parameter flow:
 {{
   "chain": [
     {{"name": "tools.now", "data": {{}}}},
-    [  # parallel execution
-      {{"name": "tools.date_calc", "data": {{"from": "tools.now.result", "add": "7 days"}}}},
-      {{"name": "tools.format", "data": {{"date": "tools.date_calc.result", "format": "ISO"}}}}
+    {{"name": "tools.date_calc", "data": {{"from": "{{tools.now.result}}", "add": "7 days"}}}},
+    {{"name": "agent.think", "data": {{"thread_id": "current"}}}}
+  ]
+}}
+
+Parallel operations:
+{{
+  "chain": [
+    [
+      {{"name": "team.members", "data": {{"team": "marketing"}}}},
+      {{"name": "team.members", "data": {{"team": "engineering"}}}}
     ],
     {{"name": "agent.think", "data": {{"thread_id": "current"}}}}
   ]
@@ -292,36 +347,42 @@ def agent_decide_instruction() -> str:
     return f"""
 You are a precise decision-making AI agent. Your role is to analyze event parameters and conditions, then provide clear, well-reasoned decisions in the exact JSON format specified.
 
-Key principles:
-- Be thorough in parameter completion
-- Evaluate conditions carefully
-- Provide clear reasoning for skip decisions
-- Always return valid JSON matching the expected schema
-- When completing parameters, use sensible defaults or infer from context
-
-INSTRUCTIONS:
-You are a decision-making AI agent responsible for parameter completion and conditional logic evaluation.
+RESPONSE FORMAT:
+You must respond with a JSON object containing exactly these fields:
+- "action": Either "continue" or "skip"
+- "params": Object containing the updated/completed parameters
+- "reason": String explanation (required if action is "skip")
 
 Your task is to:
 1. Analyze the provided context and parameters
 2. Complete any missing required parameters based on the schema
 3. Evaluate any conditional logic (if present)
-4. Decide whether to continue or skip the event if the required parameters can be completed
+4. Decide whether to continue or skip the event
 
-IMPORTANT:
-- If the required parameters can be completed, you must continue the event
-- If the required parameters cannot be completed, you must skip the event
+IMPORTANT RULES:
+- If required parameters can be completed, return "continue"
+- If required parameters cannot be completed, return "skip"
 - Do not make up parameters that are not in the schema or context
-
-RESPONSE FORMAT:
-You must respond with a JSON object containing:
-- "action": Either "continue" or "skip"
-- "params": The updated/completed parameters (even if unchanged)
-- "reason": Explanation for your decision (required if action is "skip")
+- Always return valid JSON with exactly the specified fields
 
 EXAMPLES:
-- If parameters are complete and conditions are met: {"action": "continue", "params": {...}}
-- If parameters are missing but can be completed: {"action": "continue", "params": {"completed_param": "value", ...}}
-- If conditions are not met: {"action": "skip", "params": {...}, "reason": "Condition not met: ..."}
 
+Parameters complete:
+{{
+  "action": "continue",
+  "params": {{"thread_id": "thread_123", "message": "Hello world"}}
+}}
+
+Parameters missing but can be completed:
+{{
+  "action": "continue", 
+  "params": {{"thread_id": "thread_123", "message": "Default message"}}
+}}
+
+Conditions not met:
+{{
+  "action": "skip",
+  "params": {{"thread_id": "thread_123"}},
+  "reason": "Required field 'message' cannot be determined from context"
+}}
 """

@@ -4,7 +4,7 @@ This module defines all event data contracts using Pydantic models.
 Each schema represents the structure of event data that flows through the system.
 """
 
-from typing import Any, Dict, List, Optional, Union, Literal
+from typing import Any, Dict, List, Optional, Union, Literal, Type
 from pydantic import BaseModel, Field
 
 
@@ -106,7 +106,7 @@ class AgentDecideInput(BaseModel):
     or skip the event entirely, along with reasoning for the decision.
     """
     thread_id: str = Field(description="The thread context identifier")
-    event_schema: Dict[str, Any] = Field(description="The schema of the event being evaluated")
+    event_name: str = Field(description="The name of the event being evaluated")
     prompt: str = Field(description="The prompt for the decision")
     params: Dict[str, Any] = Field(default_factory=dict, description="The parameters to pass to the condition")
 

@@ -44,3 +44,11 @@ def register_thread_commands(registry):
         """Show chat history of current thread"""
         cli._pending_coroutine = cli._show_thread_history()
         return True
+
+    @registry.command(help="Toggle tree style display for thread history", category="Thread")
+    def tree(cli, args):
+        """Toggle between bullet and tree style for thread history"""
+        cli._tree_style = not cli._tree_style
+        style_name = "tree" if cli._tree_style else "bullet"
+        cli.console.print(f"[green]✅ Switched to {style_name} style display[/green]")
+        return True

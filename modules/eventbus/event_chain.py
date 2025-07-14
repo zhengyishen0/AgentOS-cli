@@ -9,7 +9,8 @@ This module implements the core event chain execution logic, including:
 
 import asyncio
 import logging
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union, Type
+from pydantic import BaseModel
 from .models import Event, ExecutionResult
 from .interpolator import ParameterInterpolator
 
@@ -100,7 +101,8 @@ class EventChainExecutor:
             interpolated_params = await self._interpolate_params(event.data)
             print(f"interpolated_params: {interpolated_params}")
             try:
-                event_schema = self.event_bus.get_schema(event.name)
+                # Get the actual Pydantic model class, not the JSON schema
+                event_schema = self.event_bus._schemas.get(event.name)
             except Exception as e:
                 print(f"Error getting schema for {event.name}: {e}")
                 event_schema = None
@@ -111,7 +113,7 @@ class EventChainExecutor:
                     thread_id=thread_id,
                     prompt=event.data['decide'],
                     params=interpolated_params,
-                    schema=event_schema
+                    event=event
                 )
                 if decision['action'] == 'skip':
                     event.result = {'skipped': True, 'reason': decision.get('reason')}
@@ -124,21 +126,25 @@ class EventChainExecutor:
             try:
                 event_schema(**interpolated_params)
             except Exception as e:
+                print(f"Validation failed for {event.name}: {e}")
+                print(f"Params: {interpolated_params}")
                 # Trigger agent.decide for parameter completion
                 completed_params = await self._complete_params(
-                    thread_id=thread_id,
                     params=interpolated_params,
-                    schema=event_schema,
-                    validation_error=str(e)
+                    event_name=event.name,
+                    validation_error=str(e),
+                    thread_id=thread_id
                 )
+                print(f"Completed params: {completed_params}")
                 interpolated_params = completed_params
             
+            # Handle special "current" thread_id replacement
+            if 'thread_id' in interpolated_params and interpolated_params['thread_id'] == "current":
+                interpolated_params['thread_id'] = thread_id
+            
             # Update event data with interpolated params
-            event.data = {
-                **interpolated_params,
-                '_thread_id': thread_id,
-                '_chain_execution': True
-            }
+            # Ensure we preserve the validated structure
+            event.data = interpolated_params.copy()
 
             # Wait for event result (this needs enhancement in event_bus.py)
             result = await self._publish_and_wait(event)
@@ -190,7 +196,7 @@ class EventChainExecutor:
             
         return self._interpolator.interpolate(params)
     
-    async def _handle_decide(self, thread_id: str, prompt: str, params: Dict[str, Any], schema: dict) -> Dict[str, str]:
+    async def _handle_decide(self, thread_id: str, prompt: str, params: Dict[str, Any], event: Event) -> Dict[str, str]:
         """Handle conditional logic via agent.decide.
 
         Args:
@@ -211,7 +217,7 @@ class EventChainExecutor:
                 'thread_id': thread_id,
                 'prompt': prompt,
                 'params': params,
-                'event_schema': schema
+                'event_name': event.name
             }
         )   
         return decision
@@ -219,7 +225,7 @@ class EventChainExecutor:
     async def _complete_params(
         self,
         params: Dict[str, Any],
-        schema: dict,
+        event_name: str,
         validation_error: str,
         thread_id: str
     ) -> Dict[str, Any]:
@@ -240,7 +246,7 @@ class EventChainExecutor:
                 'thread_id': thread_id,
                 'prompt': "Correct the following parameters to match the schema. Current error: " + validation_error,
                 'params': params,
-                'event_schema': schema
+                'event_name': event_name
             }
         )   
 

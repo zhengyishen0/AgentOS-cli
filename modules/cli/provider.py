@@ -58,6 +58,9 @@ class EnhancedCLIProvider:
         self.key_bindings = KeyBindings()
         self._setup_key_bindings()
         self.completer = self.command_registry.create_dynamic_completer(self)
+        
+        # Display options
+        self._tree_style = True  # Toggle between bullet and tree style (tree is default)
 
     def _setup_key_bindings(self):
         """Setup keyboard shortcuts for thread navigation"""
@@ -419,7 +422,38 @@ class EnhancedCLIProvider:
             sorted_events = sorted(filtered_events, key=lambda x: x.timestamp)
             recent_events = sorted_events[-10:] if len(sorted_events) > 10 else sorted_events
             
+            # Track chain events and their children for indented display
+            chain_events = {}
+            processed_events = set()
+            
+            # First pass: identify chain events and their children
             for event in recent_events:
+                if event.name == "agent.chain" and event.result and isinstance(event.result, dict):
+                    chain_id = event.event_id if hasattr(event, 'event_id') else id(event)
+                    chain_events[chain_id] = {
+                        'parent': event,
+                        'children': []
+                    }
+                    
+                    # Look for child events that were executed as part of this chain
+                    if 'events' in event.result:
+                        for child_event_data in event.result['events']:
+                            if isinstance(child_event_data, dict) and 'name' in child_event_data:
+                                # Find the actual event object in recent_events
+                                for recent_event in recent_events:
+                                    if (recent_event.name == child_event_data['name'] and 
+                                        recent_event.timestamp > event.timestamp and
+                                        id(recent_event) not in processed_events):
+                                        chain_events[chain_id]['children'].append(recent_event)
+                                        processed_events.add(id(recent_event))
+                                        break
+            
+            # Second pass: display events with indentation
+            for event in recent_events:
+                # Skip if this event is a child of a chain (will be displayed with parent)
+                if id(event) in processed_events:
+                    continue
+                    
                 timestamp = event.timestamp.strftime("%H:%M:%S") if hasattr(event.timestamp, 'strftime') else str(event.timestamp)
                 
                 # Format different event types with rich styling
@@ -438,7 +472,31 @@ class EnhancedCLIProvider:
                     elif event.result and 'message' in event.result:
                         self.console.print(f"[dim][{timestamp}][/dim] [yellow]🤔 Thinking:[/yellow] {event.result['message']}")
                 elif event.name == "agent.chain":
-                    self.console.print(f"[dim][{timestamp}][/dim] [magenta]🔗 Chain:[/magenta] {event.result['message']}")
+                    # Display chain parent with original message
+                    original_message = event.data.get('message', 'Chain execution')
+                    self.console.print(f"[dim][{timestamp}][/dim] [magenta]🔗 Chain:[/magenta] {original_message}")
+                    
+                    # Display child events with bullet points
+                    chain_id = event.event_id if hasattr(event, 'event_id') else id(event)
+                    if chain_id in chain_events:
+                        for i, child_event in enumerate(chain_events[chain_id]['children']):
+                            child_timestamp = child_event.timestamp.strftime("%H:%M:%S") if hasattr(child_event.timestamp, 'strftime') else str(child_event.timestamp)
+                            
+                            # Choose prefix based on tree style setting
+                            if self._tree_style:
+                                prefix = "  ├─ " if i < len(chain_events[chain_id]['children']) - 1 else "  └─ "
+                            else:
+                                prefix = "  • "
+                            
+                            if child_event.name == "agent.think":
+                                if child_event.result and 'message' in child_event.result:
+                                    self.console.print(f"{prefix}[dim][{child_timestamp}][/dim] [yellow]🤔 Thinking:[/yellow] {child_event.result['message']}")
+                            elif child_event.name == "agent.reply":
+                                message = child_event.data.get('message', '')
+                                self.console.print(f"{prefix}[dim][{child_timestamp}][/dim] [green]🤖 Agent:[/green] {message}")
+                            else:
+                                # Generic child event display
+                                self.console.print(f"{prefix}[dim][{child_timestamp}][/dim] [white]📊 {child_event.name}:[/white] {child_event.data}")
                 elif event.name == "thread.created":
                     self.console.print(f"[dim][{timestamp}][/dim] [cyan]🧵 Thread created[/cyan]")
                 else:
