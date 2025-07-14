@@ -40,7 +40,7 @@ def register_thread_commands(registry):
         return True
 
     @registry.command(help="Show current thread history", category="Thread")
-    def thread_history(cli, args):
+    def history(cli, args):
         """Show chat history of current thread"""
         cli._pending_coroutine = cli._show_thread_history()
         return True

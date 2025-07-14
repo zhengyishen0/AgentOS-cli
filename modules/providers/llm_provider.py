@@ -5,6 +5,10 @@ import logging
 from typing import Any, Dict, List, Optional, Type, TypeVar, Union
 from pydantic import BaseModel, ValidationError
 from openai import OpenAI
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +31,7 @@ class LLMProvider:
     
     def complete(
         self,
-        messages: List[Dict[str, str]],
+        message: str,
         system_message: Optional[str] = None,
         schema: Optional[Type[T]] = None,
         model: Optional[str] = None,
@@ -38,8 +42,8 @@ class LLMProvider:
         """Execute LLM completion with configurable output format.
         
         Args:
-            messages: Chat messages
-            system_message: Optional system message to add to the messages
+            message: User message content
+            system_message: Optional system message to prepend
             schema: Optional Pydantic model for output validation
             model: Model to use (defaults to self.default_model)
             temperature: Temperature for generation
@@ -53,18 +57,21 @@ class LLMProvider:
             ValidationError: If input or output validation fails
         """
 
+        # Build messages list internally
+        messages = []
+        if system_message:
+            messages.append({"role": "system", "content": system_message})
+        messages.append({"role": "user", "content": message})
+
         request_params = {
             "model": model or self.default_model,
             "messages": messages,
             "temperature": temperature
         }
-
-        if system_message:
-            request_params["messages"].insert(0, {"role": "system", "content": system_message})
         
         if json_mode:
             request_params["response_format"] = {"type": "json_object"}
-            
+
         if max_tokens:
             request_params["max_tokens"] = max_tokens
         

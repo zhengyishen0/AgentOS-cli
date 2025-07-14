@@ -1,7 +1,6 @@
 """Agent-related event handlers for AgentOS."""
 
 import logging
-from openai import OpenAI
 import json
 from typing import Dict, Any
 from modules.eventbus.models import Event
@@ -11,11 +10,11 @@ from modules.eventbus.schemas import (
 )
 from modules import eventbus, thread_manager, executor
 from modules.cli.provider import get_global_cli_provider
+from modules.providers.llm_provider import llm
 from pprint import pprint
 
 
 logger = logging.getLogger(__name__)
-client = OpenAI()
 
 
 @eventbus.register("agent.think", schema=AgentThinkInput)
@@ -49,18 +48,15 @@ async def agent_think(event: Event) -> Dict[str, Any]:
     if len(thread.events) > 0:
         thread_context += f"\nEvents: {len(thread.events)}"
 
-    message_content = f"""PROMPT: {input_data.prompt}\nTHREAD CONTEXT: {thread_context}"""
+    user_message = f"""PROMPT: {input_data.prompt}\nTHREAD CONTEXT: {thread_context}"""
     
-    response = client.responses.parse(
-        model="gpt-4.1-nano",
-        input=[
-            {"role": "system", "content": agent_think_instruction(registered_schemas)},
-            {"role": "user", "content": message_content}
-        ],
-        text_format=AgentThinkOutput
+    response = llm.complete(
+        message=user_message,
+        system_message=agent_think_instruction(registered_schemas),
+        schema=AgentThinkOutput,
     )
     
-    output = response.output_parsed.model_dump()
+    output = response.model_dump()
     print('\nagent.think output:')
     pprint(output)
     print('\n\n')
@@ -148,17 +144,13 @@ async def agent_chain(event: Event) -> Dict[str, Any]:
     input_data = AgentChainInput(**event.data)
     registered_schemas = eventbus.list_schemas()
 
-    response = client.chat.completions.create(
-        model="gpt-4.1-nano",
-        messages=[
-            {"role": "system", "content": agent_chain_instruction(registered_schemas)},
-            {"role": "user", "content": f"PLAN: {input_data.message}"}
-        ],
-        response_format={"type": "json_object"}
+    response = llm.complete(
+        message=f"PLAN: {input_data.message}",
+        system_message=agent_chain_instruction(registered_schemas),
+        json_mode=True
     )
 
-    data = response.choices[0].message.content
-    chain = json.loads(data).get('chain', [])
+    chain = response.get('chain', [])
     chain_events = _convert_chain_to_events(chain)
 
     print('\nagent.chain output:')
@@ -208,24 +200,14 @@ TASK: {input_data.prompt}
 - Thread Context: {thread}
 """
 
-    response =  client.chat.completions.create(
-        model="gpt-4.1-nano",
-        messages=[
-            {"role": "system", "content": agent_decide_instruction()},
-            {"role": "user", "content": message_content}
-        ],
-        response_format={"type": "json_object"}
-    )
-
-    output = response.choices[0].message.content
-    
-    # Parse the JSON response
     try:
-        parsed_output = json.loads(output)
-        return parsed_output
-    except json.JSONDecodeError as e:
-        logger.error(f"Failed to parse agent.decide response as JSON: {e}")
-        logger.error(f"Raw response: {output}")
+        response = llm.complete(
+            message=message_content,
+            system_message=agent_decide_instruction(),
+        )
+        return response
+    except Exception as e:
+        logger.error(f"Failed to get agent.decide response: {e}")
         # Return a safe fallback
         return {
             "action": "continue",
