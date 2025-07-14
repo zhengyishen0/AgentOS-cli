@@ -433,9 +433,10 @@ class EnhancedCLIProvider:
                 return
             
             # Display the 50 latest events in chronological order
+            num_show = 20
             filtered_events = [x for x in thread.events if x.name not in ("thread.created")]
             sorted_events = sorted(filtered_events, key=lambda x: x.timestamp)
-            recent_events = sorted_events[-50:] if len(sorted_events) > 50 else sorted_events
+            recent_events = sorted_events[-num_show:] if len(sorted_events) > num_show else sorted_events
             
             # Track chain events and their children for indented display
             chain_events = {}
@@ -527,8 +528,8 @@ class EnhancedCLIProvider:
                     self.console.print(f"[dim][{timestamp}][/dim] [white]📊 {event.name}:[/white] {event.data}")
             
             self.console.rule()
-            if len(thread.events) > 20:
-                self.console.print(f"[dim]Showing 50 latest events (total: {len(thread.events)})[/dim]")
+            if len(thread.events) > num_show:
+                self.console.print(f"[dim]Showing {num_show} latest events (total: {len(thread.events)})[/dim]")
             else:
                 self.console.print(f"[dim]Total events: {len(thread.events)}[/dim]")
             self.console.print()
