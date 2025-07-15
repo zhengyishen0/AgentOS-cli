@@ -18,9 +18,11 @@ class TaskScheduleInput(BaseModel):
     Expected behavior: Creates a scheduled task that will trigger the specified actions
     when the time condition is met.
     """
-    type: str = Field(default="once", description="Task type: 'once', 'recurring', or 'conditional'")
-    at: Optional[str] = Field(default=None, description="When to run the task (ISO format or cron expression)")
-    action: List[str] = Field(default_factory=list, description="List of actions to execute")
+    name: Optional[str] = Field(default=None, description="Human-readable task name")
+    trigger: Dict[str, Any] = Field(description="Trigger configuration (type, expression/seconds/run_date)")
+    action: Any = Field(description="Event chain to execute (single event dict or list of events)")
+    thread_id: Optional[str] = Field(default=None, description="Thread ID for stateful execution")
+    metadata: Optional[Dict[str, Any]] = Field(default=None, description="Additional task metadata")
 
 
 class TaskRegisterInput(BaseModel):
@@ -32,9 +34,16 @@ class TaskRegisterInput(BaseModel):
     Expected behavior: Registers a task listener that will automatically execute the specified
     actions when the trigger event is detected and conditions are met.
     """
-    trigger: str = Field(description="Event trigger pattern")
-    condition: str = Field(default="", description="Condition for task execution")
-    action: List[str] = Field(default_factory=list, description="List of actions to execute")
+    name: Optional[str] = Field(default=None, description="Human-readable hook name")
+    trigger: str = Field(description="Event trigger pattern (supports wildcards)")
+    position: Optional[Literal["before", "after"]] = Field(default="after", description="Hook position")
+    condition: Optional[str] = Field(default=None, description="Condition for task execution")
+    action: Any = Field(description="Event chain to execute (single event dict or list of events)")
+    thread_id: Optional[str] = Field(default=None, description="Thread ID for stateful execution")
+    priority: Optional[int] = Field(default=0, description="Execution priority (higher = first)")
+    can_block: Optional[bool] = Field(default=False, description="Can pre-hook block the event")
+    repetition_guard: Optional[Dict[str, Any]] = Field(default=None, description="Repetition guard config")
+    metadata: Optional[Dict[str, Any]] = Field(default=None, description="Additional hook metadata")
 
 
 class TaskListInput(BaseModel):

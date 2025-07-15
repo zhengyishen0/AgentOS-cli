@@ -111,7 +111,11 @@ class ConcurrentEventBus():
         if thread_id is None:
             print(f"\n\nNo thread_id provided for event {name}. Using current thread.\n\n")
         
-        event = Event(name=name, data=data, source=source, thread_id=thread_id)
+        # Create event with thread_id only if provided
+        event_kwargs = {"name": name, "data": data, "source": source}
+        if thread_id is not None:
+            event_kwargs["thread_id"] = thread_id
+        event = Event(**event_kwargs)
 
         # Store in history
         self._event_history.append(event)
