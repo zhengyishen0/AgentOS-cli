@@ -162,7 +162,7 @@ class TaskManager:
             for i, event in enumerate(event_chain):
                 print(f"  Step {i+1}: {event.get('event', 'unknown')} - {event.get('data', {})}")
             
-            # In real implementation, would use:
+            # TODO: In real implementation, would use:
             # result = await self.chain_executor.execute(event_chain)
             
         except Exception as e:
