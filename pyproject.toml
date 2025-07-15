@@ -16,8 +16,6 @@ dependencies = [
     "prompt-toolkit>=3.0.0",
     "rich>=13.0.0",
     "apscheduler>=3.11.0",
-    "aiosqlite>=0.21.0",
-    "sqlalchemy>=2.0.41",
 ]
 
 [project.scripts]

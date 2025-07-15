@@ -35,8 +35,8 @@ class TaskManager:
         await eventbus.subscribe("task.hook", self._handle_hook_task)
         await eventbus.subscribe("task.list", self._handle_list_tasks)
         
-        # Global event interceptor for hooks
-        await eventbus.subscribe("*", self._check_hooks)
+        # Install hook interceptor into eventbus
+        self._install_hook_interceptor()
         
         # Load existing tasks
         self._load_tasks()
@@ -87,6 +87,7 @@ class TaskManager:
             "type": "hook",
             "name": data.get("name", "Unnamed Hook"),
             "event_pattern": data.get("pattern"),
+            "position": data.get("position", "after"),
             "event_chain": data.get("event_chain", [])
         }
         
@@ -137,23 +138,40 @@ class TaskManager:
         """Register a hook."""
         task_id = task["id"]
         pattern = task.get("event_pattern", "*")
+        position = task.get("position", "after")
         
         # Create hook function
         def hook_func(event_name, event_data):
-            print(f"\n[Hook Task: {task['name']}] Triggered by {event_name}")
+            print(f"\n[{position.upper()}-Hook Task: {task['name']}] Triggered by {event_name}")
             # Execute synchronously for now
             for i, event in enumerate(task.get("event_chain", [])):
                 print(f"  Step {i+1}: {event.get('event', 'unknown')}")
             
-        self.hook_manager.register_hook(task_id, pattern, hook_func)
+        self.hook_manager.register_hook(task_id, pattern, hook_func, position)
         
-    async def _check_hooks(self, event):
-        """Check all events against registered hooks."""
-        # Skip task system events to prevent loops
-        if event.name.startswith("task."):
-            return
+    def _install_hook_interceptor(self):
+        """Install a hook interceptor in the eventbus."""
+        # Save original publish method
+        original_publish = eventbus.publish
+        
+        # Create intercepting publish method
+        async def intercepted_publish(name: str, data: dict, source: str = "system"):
+            # Check pre-hooks (before the event)
+            if not name.startswith("task."):
+                await self.hook_manager.handle_event(name, data, position="before")
             
-        await self.hook_manager.handle_event(event.name, event.data)
+            # Call original publish
+            result = await original_publish(name, data, source)
+            
+            # Check post-hooks (after the event)
+            if not name.startswith("task."):
+                await self.hook_manager.handle_event(name, data, position="after")
+            
+            return result
+        
+        # Replace publish method
+        eventbus.publish = intercepted_publish
+        print("Hook interceptor installed!")
         
     async def _execute_event_chain(self, event_chain: List[Dict]):
         """Execute an event chain."""

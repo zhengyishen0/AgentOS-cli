@@ -2,6 +2,7 @@
 
 import asyncio
 from datetime import datetime, timedelta
+from typing import Callable
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 
@@ -9,7 +10,7 @@ class TaskScheduler:
     """Minimal scheduler using APScheduler."""
     
     def __init__(self):
-        # Use memory store (no persistence for now)
+        # Use memory store - tasks will be restored from JSON by TaskManager
         self.scheduler = AsyncIOScheduler()
         self.task_count = 0
         
