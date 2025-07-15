@@ -121,9 +121,10 @@ class TaskManager:
         # Create executor function
         def execute():
             print(f"\n[Scheduled Task: {task['name']}]")
-            # Execute synchronously for now
+            # For now, just print the event chain
+            # TODO: Implement proper async execution across threads
             for i, event in enumerate(task.get("event_chain", [])):
-                print(f"  Step {i+1}: {event.get('event', 'unknown')}")
+                print(f"  Step {i+1}: Would publish {event.get('event', 'unknown')} with data: {event.get('data', {})}")
             
         # Schedule based on type
         if trigger.get("type") == "interval":
@@ -143,9 +144,10 @@ class TaskManager:
         # Create hook function
         def hook_func(event_name, event_data):
             print(f"\n[{position.upper()}-Hook Task: {task['name']}] Triggered by {event_name}")
-            # Execute synchronously for now
+            # For now, just print the event chain
+            # TODO: Implement proper async execution
             for i, event in enumerate(task.get("event_chain", [])):
-                print(f"  Step {i+1}: {event.get('event', 'unknown')}")
+                print(f"  Step {i+1}: Would publish {event.get('event', 'unknown')} with data: {event.get('data', {})}")
             
         self.hook_manager.register_hook(task_id, pattern, hook_func, position)
         
@@ -157,14 +159,16 @@ class TaskManager:
         # Create intercepting publish method
         async def intercepted_publish(name: str, data: dict, source: str = "system"):
             # Check pre-hooks (before the event)
-            if not name.startswith("task."):
+            # Skip task events and events from hooks to prevent loops
+            if not name.startswith("task.") and source != "hook":
                 await self.hook_manager.handle_event(name, data, position="before")
             
             # Call original publish
             result = await original_publish(name, data, source)
             
             # Check post-hooks (after the event)
-            if not name.startswith("task."):
+            # Skip task events and events from hooks to prevent loops
+            if not name.startswith("task.") and source != "hook":
                 await self.hook_manager.handle_event(name, data, position="after")
             
             return result
@@ -174,15 +178,22 @@ class TaskManager:
         print("Hook interceptor installed!")
         
     async def _execute_event_chain(self, event_chain: List[Dict]):
-        """Execute an event chain."""
+        """Execute an event chain by publishing each event."""
         try:
-            # For now, just print the chain
-            for i, event in enumerate(event_chain):
-                print(f"  Step {i+1}: {event.get('event', 'unknown')} - {event.get('data', {})}")
-            
-            # TODO: In real implementation, would use:
-            # result = await self.chain_executor.execute(event_chain)
-            
+            for i, event_spec in enumerate(event_chain):
+                event_name = event_spec.get('event', 'unknown')
+                event_data = event_spec.get('data', {})
+                
+                print(f"  Step {i+1}: Publishing {event_name}")
+                
+                # Actually publish the event (with source="hook" to prevent loops)
+                try:
+                    result = await eventbus.publish(event_name, event_data, source="hook")
+                    if result:
+                        print(f"    → Result: {result}")
+                except Exception as e:
+                    print(f"    → Error: {e}")
+                    
         except Exception as e:
             print(f"  Error executing chain: {e}")
 

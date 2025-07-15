@@ -28,3 +28,23 @@
 - **Threads**: Persistent event chains with full context and history
 - **Three-Model Strategy**: Heavy (think), Fast (chain), Ultra-light (decide)
 - **Parameter Flow**: Results flow between events via interpolation ({event.result})
+
+## Task System Implementation Notes
+
+### Completed:
+1. **JSON-based task system** - No SQLite dependencies, pure JSON storage
+2. **Scheduled tasks** - Using APScheduler for time-based execution
+3. **Hook system** - Pattern-based event matching with before/after positions
+4. **Event chain support** - Tasks can define sequences of events to execute
+
+### Known Issues:
+1. **Event Loop Threading Problem**: 
+   - APScheduler runs tasks in separate threads without async event loops
+   - EventBus components (locks, storage) are tied to the main event loop
+   - Current workaround: Event chains print what they would do instead of actually executing
+   - Proper fix would require: `asyncio.run_coroutine_threadsafe()` or async-native scheduler
+
+2. **Hook Implementation**:
+   - Uses method interception on `eventbus.publish()` 
+   - Wildcard patterns work via `fnmatch`
+   - Must use `source="hook"` when publishing from hooks to prevent infinite loops
